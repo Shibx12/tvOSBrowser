@@ -12,17 +12,26 @@
 
 @interface AppDelegate ()
 
+@property (nonatomic) BOOL cookieRestoreScheduled;
+
 @end
 
 @implementation AppDelegate
 
 - (void)restoreCookiesFromDefaults {
+    if (self.cookieRestoreScheduled) {
+        return;
+    }
+    self.cookieRestoreScheduled = YES;
+
     NSData *cookieData = [[NSUserDefaults standardUserDefaults] objectForKey:@"ApplicationCookie"];
     if (cookieData.length == 0) {
         return;
     }
 
-    [BrowserWebView restoreCookiesFromData:cookieData];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [BrowserWebView restoreCookiesFromData:cookieData];
+    });
 }
 
 - (void)saveCookiesToDefaults {
@@ -32,7 +41,6 @@
     }
     
     [[NSUserDefaults standardUserDefaults] setObject:cookieData forKey:@"ApplicationCookie"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
 
@@ -41,12 +49,10 @@
     if ([[NSUserDefaults standardUserDefaults] boolForKey:@"MobileMode"]) {
         [[NSUserDefaults standardUserDefaults] setObject:BrowserPreferencesStore.mobileUserAgent forKey:@"UserAgent"];
         [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"MobileMode"];
-        [[NSUserDefaults standardUserDefaults] synchronize];
     }
     else {
         [[NSUserDefaults standardUserDefaults] setObject:BrowserPreferencesStore.desktopUserAgent forKey:@"UserAgent"];
         [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"MobileMode"];
-        [[NSUserDefaults standardUserDefaults] synchronize];
     }
     [self restoreCookiesFromDefaults];
 	return YES;

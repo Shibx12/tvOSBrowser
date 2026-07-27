@@ -24,12 +24,21 @@
 
 static NSString * const kBrowserGlobalSelectPressEndedNotification = @"BrowserGlobalSelectPressEndedNotification";
 
-static UIColor *kTextColor(void) {
-    if (@available(tvOS 13, *)) {
-        return UIColor.labelColor;
-    } else {
-        return UIColor.blackColor;
+static CGPoint BrowserSmoothMagnetPoint(CGPoint cursorPoint,
+                                        CGPoint targetPoint,
+                                        CGFloat captureRadius) {
+    CGFloat deltaX = targetPoint.x - cursorPoint.x;
+    CGFloat deltaY = targetPoint.y - cursorPoint.y;
+    CGFloat distance = hypot(deltaX, deltaY);
+    if (captureRadius <= 0.0 || distance >= captureRadius) {
+        return cursorPoint;
     }
+
+    CGFloat proximity = 1.0 - (distance / captureRadius);
+    CGFloat smoothProximity = proximity * proximity * (3.0 - (2.0 * proximity));
+    CGFloat attraction = smoothProximity * 0.84;
+    return CGPointMake(cursorPoint.x + (deltaX * attraction),
+                       cursorPoint.y + (deltaY * attraction));
 }
 
 @interface ViewController () <BrowserChromeViewControllerDelegate, BrowserFavoritesHomeViewControllerDelegate, BrowserMenuCoordinatorHost, BrowserPageActionCoordinatorHost, BrowserRemoteInputControllerHost, BrowserTabCoordinatorHost, BrowserVideoPlaybackCoordinatorHost>
@@ -47,13 +56,13 @@ static UIColor *kTextColor(void) {
 @property (nonatomic) BrowserTabCoordinator *tabCoordinator;
 @property (nonatomic) BrowserVideoPlaybackCoordinator *videoPlaybackCoordinator;
 @property (nonatomic) BrowserViewModel *viewModel;
-@property (nonatomic) BOOL displayedHintsOnLaunch;
 @property (nonatomic) BOOL scrollViewAllowBounces;
 @property (nonatomic, getter=isTopBarFocusActive) BOOL topBarFocusActive;
 @property (nonatomic) CGFloat chromeScrollAccumulator;
 @property (nonatomic, getter=isPageZoomed) BOOL pageZoomed;
 @property (nonatomic, weak) BrowserWebView *zoomedWebView;
 @property (nonatomic) BOOL browserContainerClipsBeforeZoom;
+@property (nonatomic) UITextField *activeAddressInputTextField;
 
 @end
 
@@ -127,10 +136,6 @@ static UIColor *kTextColor(void) {
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     [self.tabCoordinator webViewDidAppear];
-    if (!self.preferencesStore.dontShowHintsOnLaunch && !self.displayedHintsOnLaunch) {
-        [self showHintsAlert];
-    }
-    self.displayedHintsOnLaunch = YES;
 }
 
 - (void)viewDidDisappear:(BOOL)animated {
@@ -485,84 +490,41 @@ static UIColor *kTextColor(void) {
     [self.webview stringByEvaluatingJavaScriptFromString:jsString];
 }
 
-- (void)showInputURLorSearchGoogle {
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Enter URL or Search Terms"
-                                                                             message:@""
-                                                                      preferredStyle:UIAlertControllerStyleAlert];
-
-    [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-        textField.keyboardType = UIKeyboardTypeURL;
-        textField.placeholder = @"Enter URL or Search Terms";
-        textField.textColor = kTextColor();
-        [textField setReturnKeyType:UIReturnKeyDone];
-    }];
-
-    __weak typeof(self) weakSelf = self;
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Search Google"
-                                                        style:UIAlertActionStyleDefault
-                                                      handler:^(__unused UIAlertAction *action) {
-        UITextField *textField = alertController.textFields.firstObject;
-        NSURLRequest *searchRequest = [weakSelf.navigationService googleSearchRequestForQuery:textField.text];
-        if (searchRequest != nil) {
-            [weakSelf.webview loadRequest:searchRequest];
-        } else {
-            [weakSelf requestURLorSearchInput];
-        }
-    }]];
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Go To Website"
-                                                        style:UIAlertActionStyleDefault
-                                                      handler:^(__unused UIAlertAction *action) {
-        UITextField *textField = alertController.textFields.firstObject;
-        if (textField.text.length == 0) {
-            [weakSelf requestURLorSearchInput];
-            return;
-        }
-        NSURLRequest *navigationRequest = [weakSelf.navigationService requestForEnteredAddressString:textField.text];
-        if (navigationRequest != nil) {
-            [weakSelf.webview loadRequest:navigationRequest];
-        } else {
-            [weakSelf requestURLorSearchInput];
-        }
-    }]];
-    [alertController addAction:[UIAlertAction actionWithTitle:nil style:UIAlertActionStyleCancel handler:nil]];
-    [self presentViewController:alertController animated:YES completion:nil];
-
-    UITextField *textField = alertController.textFields.firstObject;
-    if (self.webview.request == nil || self.webview.request.URL.absoluteString.length > 0) {
-        [textField becomeFirstResponder];
+- (void)addressInputTextFieldDidFinish:(UITextField *)textField {
+    if (textField != self.activeAddressInputTextField) {
+        return;
     }
+
+    NSString *addressString = textField.text;
+    [textField resignFirstResponder];
+    [textField removeFromSuperview];
+    self.activeAddressInputTextField = nil;
+    [self browserChromeViewController:self.chromeViewController
+               didSubmitAddressString:addressString];
+}
+
+- (void)showInputURLorSearchGoogle {
+    [self.activeAddressInputTextField resignFirstResponder];
+    [self.activeAddressInputTextField removeFromSuperview];
+
+    UITextField *textField = [[UITextField alloc] initWithFrame:CGRectMake(-100.0, -100.0, 1.0, 1.0)];
+    textField.keyboardType = UIKeyboardTypeURL;
+    textField.returnKeyType = UIReturnKeyGo;
+    textField.backgroundColor = UIColor.clearColor;
+    textField.borderStyle = UITextBorderStyleNone;
+    textField.alpha = 0.01;
+    textField.accessibilityElementsHidden = YES;
+    [textField addTarget:self
+                  action:@selector(addressInputTextFieldDidFinish:)
+        forControlEvents:UIControlEventEditingDidEndOnExit];
+
+    self.activeAddressInputTextField = textField;
+    [self.view addSubview:textField];
+    [textField becomeFirstResponder];
 }
 
 - (void)requestURLorSearchInput {
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Quick Menu"
-                                                                             message:@""
-                                                                      preferredStyle:UIAlertControllerStyleAlert];
-
-    if (self.webview.canGoForward) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Go Forward"
-                                                            style:UIAlertActionStyleDefault
-                                                          handler:^(__unused UIAlertAction *action) {
-            [self.webview goForward];
-        }]];
-    }
-
-    [alertController addAction:[UIAlertAction actionWithTitle:@"Input URL or Search with Google"
-                                                        style:UIAlertActionStyleDefault
-                                                      handler:^(__unused UIAlertAction *action) {
-        [self showInputURLorSearchGoogle];
-    }]];
-
-    if (self.webview.request != nil && self.webview.request.URL.absoluteString.length > 0) {
-        [alertController addAction:[UIAlertAction actionWithTitle:@"Reload Page"
-                                                            style:UIAlertActionStyleDefault
-                                                          handler:^(__unused UIAlertAction *action) {
-            self.tabCoordinator.previousURL = @"";
-            [self.webview reload];
-        }]];
-    }
-
-    [alertController addAction:[UIAlertAction actionWithTitle:nil style:UIAlertActionStyleCancel handler:nil]];
-    [self presentViewController:alertController animated:YES completion:nil];
+    [self showInputURLorSearchGoogle];
 }
 
 - (void)showHintsAlert {
@@ -1026,10 +988,6 @@ static UIColor *kTextColor(void) {
 
 #pragma mark - BrowserPageActionCoordinatorHost
 
-- (void)browserPageActionCoordinatorPresentViewController:(UIViewController *)viewController {
-    [self browserPresentViewController:viewController];
-}
-
 - (BOOL)browserPageActionCoordinatorCreateNewTabWithRequest:(NSURLRequest *)request {
     return [self.tabCoordinator createNewTabWithRequest:request];
 }
@@ -1143,13 +1101,17 @@ static UIColor *kTextColor(void) {
 
 - (CGPoint)browserRemoteInputControllerSnapPointForCursorPoint:(CGPoint)point {
     if (self.chromeViewController.isChromeVisible) {
+        static CGFloat const kChromeMagnetCaptureRadius = 68.0;
         CGPoint chromePoint = [self.chromeViewController.view convertPoint:point fromView:self.view];
         CGPoint chromeMagnetPoint = CGPointZero;
         if ([self.chromeViewController getMagnetPoint:&chromeMagnetPoint
                                              forPoint:chromePoint
-                                      maximumDistance:54.0]) {
-            return [self.view convertPoint:chromeMagnetPoint
-                                  fromView:self.chromeViewController.view];
+                                      maximumDistance:kChromeMagnetCaptureRadius]) {
+            CGPoint targetPoint = [self.view convertPoint:chromeMagnetPoint
+                                                 fromView:self.chromeViewController.view];
+            return BrowserSmoothMagnetPoint(point,
+                                            targetPoint,
+                                            kChromeMagnetCaptureRadius);
         }
     }
     if ([self isFavoritesHomeVisible]) {

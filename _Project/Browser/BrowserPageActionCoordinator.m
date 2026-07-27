@@ -5,20 +5,15 @@
 #import "BrowserVideoPlaybackCoordinator.h"
 #import "BrowserWebView.h"
 
-static UIColor *BrowserPageActionTextColor(void) {
-    if (@available(tvOS 13, *)) {
-        return UIColor.labelColor;
-    } else {
-        return UIColor.blackColor;
-    }
-}
-
 @interface BrowserPageActionCoordinator ()
 
 @property (nonatomic, weak) id<BrowserPageActionCoordinatorHost> host;
 @property (nonatomic) BrowserDOMInteractionService *domInteractionService;
 @property (nonatomic) BrowserNavigationService *navigationService;
 @property (nonatomic) BrowserVideoPlaybackCoordinator *videoPlaybackCoordinator;
+@property (nonatomic) UITextField *activeEditableTextField;
+@property (nonatomic, weak) BrowserWebView *activeEditableWebView;
+@property (nonatomic) CGPoint activeEditablePoint;
 
 @end
 
@@ -59,112 +54,105 @@ static UIColor *BrowserPageActionTextColor(void) {
     return [self.host browserPageActionCoordinatorCreateNewTabWithRequest:request];
 }
 
+- (void)commitEditableText:(NSString *)text
+                   atPoint:(CGPoint)point
+                   webView:(BrowserWebView *)webView {
+    if (webView == nil) {
+        return;
+    }
+
+    NSString *escapedText = [self.domInteractionService javaScriptEscapedString:text ?: @""];
+    [self.domInteractionService evaluateEditableElementJavaScriptAtPoint:point
+                                                                 webView:webView
+                                                                    body:[NSString stringWithFormat:@"var target = browserEditableTarget();"
+                                                                          "if (!target) { return 'false'; }"
+                                                                          "if (typeof target.value !== 'undefined') { target.value = '%@'; }"
+                                                                          "else { target.textContent = '%@'; }"
+                                                                          "if (target.dispatchEvent) {"
+                                                                              "var eventWindow = (target.ownerDocument && target.ownerDocument.defaultView) || window;"
+                                                                              "target.dispatchEvent(new eventWindow.Event('input', { bubbles: true }));"
+                                                                              "target.dispatchEvent(new eventWindow.Event('change', { bubbles: true }));"
+                                                                          "}"
+                                                                          "return 'true';", escapedText, escapedText]];
+}
+
+- (void)clearEditablePromptContext {
+    [self.activeEditableTextField resignFirstResponder];
+    [self.activeEditableTextField removeFromSuperview];
+    self.activeEditableTextField = nil;
+    self.activeEditableWebView = nil;
+    self.activeEditablePoint = CGPointZero;
+}
+
+- (void)editableTextFieldDidFinish:(UITextField *)textField {
+    BrowserWebView *webView = self.activeEditableWebView;
+    CGPoint point = self.activeEditablePoint;
+    if (textField != self.activeEditableTextField || webView == nil) {
+        return;
+    }
+
+    [self commitEditableText:textField.text atPoint:point webView:webView];
+    [self clearEditablePromptContext];
+}
+
 - (void)presentEditableFieldPromptForFieldType:(NSString *)fieldType
                                          point:(CGPoint)point
                                        webView:(BrowserWebView *)webView {
-    NSString *fieldTitle = [self.domInteractionService evaluateEditableElementJavaScriptAtPoint:point
-                                                                                         webView:webView
-                                                                                            body:@"var target = browserEditableTarget();"
-                                                                                                 "if (!target) { return ''; }"
-                                                                                                 "return target.title || target.getAttribute('aria-label') || target.name || target.placeholder || '';"];
-    if ([fieldTitle isEqualToString:@""]) {
-        fieldTitle = fieldType;
-    }
-    NSString *placeholder = [self.domInteractionService evaluateEditableElementJavaScriptAtPoint:point
-                                                                                          webView:webView
-                                                                                             body:@"var target = browserEditableTarget();"
-                                                                                                  "if (!target) { return ''; }"
-                                                                                                  "return target.placeholder || target.getAttribute('aria-label') || '';"];
-    if ([placeholder isEqualToString:@""]) {
-        placeholder = [fieldTitle isEqualToString:fieldType] ? @"Text Input" : [NSString stringWithFormat:@"%@ Input", fieldTitle];
-    }
-    NSString *testedFormResponse = [self.domInteractionService evaluateEditableElementJavaScriptAtPoint:point
-                                                                                                 webView:webView
-                                                                                                    body:@"var target = browserEditableTarget();"
-                                                                                                         "return (target && target.form && target.form.hasAttribute('onsubmit')) ? 'true' : 'false';"];
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Input Text"
-                                                                             message:[fieldTitle capitalizedString]
-                                                                      preferredStyle:UIAlertControllerStyleAlert];
+    [self clearEditablePromptContext];
 
-    __weak typeof(self) weakSelf = self;
-    [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-        if ([fieldType isEqualToString:@"url"]) {
-            textField.keyboardType = UIKeyboardTypeURL;
-        } else if ([fieldType isEqualToString:@"email"]) {
-            textField.keyboardType = UIKeyboardTypeEmailAddress;
-        } else if ([fieldType isEqualToString:@"tel"] ||
-                   [fieldType isEqualToString:@"number"] ||
-                   [fieldType isEqualToString:@"date"] ||
-                   [fieldType isEqualToString:@"datetime"] ||
-                   [fieldType isEqualToString:@"datetime-local"]) {
-            textField.keyboardType = UIKeyboardTypeNumbersAndPunctuation;
-        } else {
-            textField.keyboardType = UIKeyboardTypeDefault;
-        }
-        textField.placeholder = [placeholder capitalizedString];
-        if ([fieldType isEqualToString:@"password"]) {
-            textField.secureTextEntry = YES;
-        }
-        textField.text = [weakSelf.domInteractionService evaluateEditableElementJavaScriptAtPoint:point
-                                                                                           webView:webView
-                                                                                              body:@"var target = browserEditableTarget();"
-                                                                                                   "if (!target) { return ''; }"
-                                                                                                   "if (typeof target.value !== 'undefined') { return target.value; }"
-                                                                                                   "return target.textContent || '';"];
-        textField.textColor = BrowserPageActionTextColor();
-        [textField setReturnKeyType:UIReturnKeyDone];
-    }];
-
-    UIAlertAction *submitAction = [UIAlertAction actionWithTitle:@"Submit"
-                                                           style:UIAlertActionStyleDefault
-                                                         handler:^(__unused UIAlertAction *action) {
-        UITextField *inputTextField = alertController.textFields.firstObject;
-        NSString *escapedText = [weakSelf.domInteractionService javaScriptEscapedString:inputTextField.text];
-        [weakSelf.domInteractionService evaluateEditableElementJavaScriptAtPoint:point
-                                                                         webView:webView
-                                                                            body:[NSString stringWithFormat:@"var target = browserEditableTarget();"
-                                                                                  "if (!target) { return 'false'; }"
-                                                                                  "if (typeof target.value !== 'undefined') { target.value = '%@'; }"
-                                                                                  "else { target.textContent = '%@'; }"
-                                                                                  "if (target.dispatchEvent) {"
-                                                                                      "target.dispatchEvent(new Event('input', { bubbles: true }));"
-                                                                                      "target.dispatchEvent(new Event('change', { bubbles: true }));"
-                                                                                  "}"
-                                                                                  "if (target.form) { target.form.submit(); }"
-                                                                                  "return 'true';", escapedText, escapedText]];
-    }];
-    UIAlertAction *doneAction = [UIAlertAction actionWithTitle:@"Done"
-                                                         style:UIAlertActionStyleDefault
-                                                       handler:^(__unused UIAlertAction *action) {
-        UITextField *inputTextField = alertController.textFields.firstObject;
-        NSString *escapedText = [weakSelf.domInteractionService javaScriptEscapedString:inputTextField.text];
-        [weakSelf.domInteractionService evaluateEditableElementJavaScriptAtPoint:point
-                                                                         webView:webView
-                                                                            body:[NSString stringWithFormat:@"var target = browserEditableTarget();"
-                                                                                  "if (!target) { return 'false'; }"
-                                                                                  "if (typeof target.value !== 'undefined') { target.value = '%@'; }"
-                                                                                  "else { target.textContent = '%@'; }"
-                                                                                  "if (target.dispatchEvent) {"
-                                                                                      "target.dispatchEvent(new Event('input', { bubbles: true }));"
-                                                                                      "target.dispatchEvent(new Event('change', { bubbles: true }));"
-                                                                                  "}"
-                                                                                  "return 'true';", escapedText, escapedText]];
-    }];
-    [alertController addAction:doneAction];
-    if ([testedFormResponse isEqualToString:@"true"]) {
-        [alertController addAction:submitAction];
+    UITextField *textField = [[UITextField alloc] initWithFrame:CGRectMake(-100.0, -100.0, 1.0, 1.0)];
+    if ([fieldType isEqualToString:@"url"]) {
+        textField.keyboardType = UIKeyboardTypeURL;
+    } else if ([fieldType isEqualToString:@"email"]) {
+        textField.keyboardType = UIKeyboardTypeEmailAddress;
+    } else if ([fieldType isEqualToString:@"tel"] ||
+               [fieldType isEqualToString:@"number"] ||
+               [fieldType isEqualToString:@"date"] ||
+               [fieldType isEqualToString:@"datetime"] ||
+               [fieldType isEqualToString:@"datetime-local"]) {
+        textField.keyboardType = UIKeyboardTypeNumbersAndPunctuation;
+    } else {
+        textField.keyboardType = UIKeyboardTypeDefault;
     }
-    [alertController addAction:[UIAlertAction actionWithTitle:nil style:UIAlertActionStyleCancel handler:nil]];
-    [self.host browserPageActionCoordinatorPresentViewController:alertController];
+    textField.secureTextEntry = [fieldType isEqualToString:@"password"];
+    textField.text = [self.domInteractionService evaluateEditableElementJavaScriptAtPoint:point
+                                                                                  webView:webView
+                                                                                     body:@"var target = browserEditableTarget();"
+                                                                                          "if (!target) { return ''; }"
+                                                                                          "if (typeof target.value !== 'undefined') { return target.value; }"
+                                                                                          "return target.textContent || '';"];
+    textField.returnKeyType = UIReturnKeyDone;
+    textField.backgroundColor = UIColor.clearColor;
+    textField.borderStyle = UITextBorderStyleNone;
+    textField.alpha = 0.01;
+    textField.accessibilityElementsHidden = YES;
+    [textField addTarget:self
+                  action:@selector(editableTextFieldDidFinish:)
+        forControlEvents:UIControlEventEditingDidEndOnExit];
 
-    UITextField *inputTextField = alertController.textFields.firstObject;
-    if ([[inputTextField.text stringByReplacingOccurrencesOfString:@" " withString:@""] isEqualToString:@""]) {
-        [inputTextField becomeFirstResponder];
-    }
+    self.activeEditableTextField = textField;
+    self.activeEditableWebView = webView;
+    self.activeEditablePoint = point;
+    UIView *keyboardHostView = webView.superview ?: webView;
+    [keyboardHostView addSubview:textField];
+    [textField becomeFirstResponder];
 }
 
 - (BOOL)handlePageSelectionAtDOMPoint:(CGPoint)point webView:(BrowserWebView *)webView {
     if ([self handleTargetBlankLinkAtDOMPoint:point webView:webView]) {
+        return YES;
+    }
+
+    NSString *frameClickResult =
+        [self.domInteractionService evaluateResolvedElementJavaScriptAtPoint:point
+                                                                     webView:webView
+                                                                        body:@"if (resolvedElement && resolvedElement.tagName &&"
+                                                                             "resolvedElement.tagName.toLowerCase() === 'iframe' &&"
+                                                                             "typeof window.__browserFrameClickAtPoint === 'function') {"
+                                                                                 "return window.__browserFrameClickAtPoint(resolvedClientX, resolvedClientY) ? 'true' : 'false';"
+                                                                             "}"
+                                                                             "return 'false';"];
+    if ([frameClickResult isEqualToString:@"true"]) {
         return YES;
     }
 
@@ -223,8 +211,46 @@ static UIColor *BrowserPageActionTextColor(void) {
                                                                                                 "return type;"];
     [self.domInteractionService evaluateResolvedElementJavaScriptAtPoint:point
                                                                  webView:webView
-                                                                    body:@"var hitTarget = resolvedElement;"
-                                                                         "var actionTarget = editableElement || interactiveElement || hitTarget;"
+                                                                    body:@"function browserLooksLikeCloseControl(element) {"
+                                                                         "if (!element) { return false; }"
+                                                                         "var text = (element.textContent || '').replace(/\\s+/g, ' ').trim();"
+                                                                         "var shortText = text.length <= 4 ? text : '';"
+                                                                         "var value = ["
+                                                                             "element.id || '',"
+                                                                             "element.className || '',"
+                                                                             "element.getAttribute ? (element.getAttribute('aria-label') || '') : '',"
+                                                                             "element.getAttribute ? (element.getAttribute('title') || '') : '',"
+                                                                             "element.getAttribute ? (element.getAttribute('data-dismiss') || '') : '',"
+                                                                             "element.getAttribute ? (element.getAttribute('data-action') || '') : '',"
+                                                                             "shortText"
+                                                                         "].join(' ').toLowerCase();"
+                                                                         "var matched = (/(^|[^a-z])(close|dismiss|cancel|exit)([^a-z]|$)/).test(value) ||"
+                                                                             "value.indexOf('modal-close') !== -1 ||"
+                                                                             "value.indexOf('popup-close') !== -1 ||"
+                                                                             "value.indexOf('icon-close') !== -1 ||"
+                                                                             "shortText === '×' || shortText === '✕' || shortText === '✖' || shortText === 'x' || shortText === 'X';"
+                                                                         "if (!matched) { return false; }"
+                                                                         "if (shortText === '×' || shortText === '✕' || shortText === '✖' || shortText === 'x' || shortText === 'X') { return true; }"
+                                                                         "var buttonLike = element.matches && element.matches('button,a,[role=\"button\"],[onclick],[tabindex]');"
+                                                                         "if (buttonLike) { return true; }"
+                                                                         "try {"
+                                                                             "var rect = element.getBoundingClientRect();"
+                                                                             "return rect.width > 0 && rect.height > 0 && rect.width <= 160 && rect.height <= 160;"
+                                                                         "} catch (error) { return false; }"
+                                                                     "}"
+                                                                     "function browserCloseAncestor(element) {"
+                                                                         "var candidate = element;"
+                                                                         "var depth = 0;"
+                                                                         "while (candidate && depth < 16) {"
+                                                                             "if (browserLooksLikeCloseControl(candidate)) { return candidate; }"
+                                                                             "candidate = browserParentElement(candidate);"
+                                                                             "depth += 1;"
+                                                                         "}"
+                                                                         "return null;"
+                                                                     "}"
+                                                                     "var closeTarget = browserCloseAncestor(resolvedElement);"
+                                                                     "var hitTarget = closeTarget || resolvedElement;"
+                                                                     "var actionTarget = closeTarget || editableElement || interactiveElement || hitTarget;"
                                                                          "if (!hitTarget || !actionTarget) { return 'false'; }"
                                                                          "try { if (actionTarget.focus) { actionTarget.focus({ preventScroll: true }); } } catch (error) {"
                                                                              "try { if (actionTarget.focus) { actionTarget.focus(); } } catch (ignoredError) {}"
@@ -252,6 +278,17 @@ static UIColor *BrowserPageActionTextColor(void) {
                                                                              "mouseEvent.initMouseEvent(type, bubbles, true, ownerWindow, 1, resolvedClientX, resolvedClientY, resolvedClientX, resolvedClientY, false, false, false, false, 0, null);"
                                                                              "return target.dispatchEvent(mouseEvent);"
                                                                          "}"
+                                                                         "function dispatchTouchEvent(target, type) {"
+                                                                             "try {"
+                                                                                 "var ownerDocument = target.ownerDocument || resolvedDocument || document;"
+                                                                                 "var ownerWindow = ownerDocument.defaultView || resolvedWindow || window;"
+                                                                                 "if (!ownerWindow.Touch || !ownerWindow.TouchEvent) { return; }"
+                                                                                 "var touch = new ownerWindow.Touch({ identifier: 1, target: target, clientX: resolvedClientX, clientY: resolvedClientY, screenX: resolvedClientX, screenY: resolvedClientY, pageX: resolvedClientX + ownerWindow.scrollX, pageY: resolvedClientY + ownerWindow.scrollY, radiusX: 1, radiusY: 1, force: type === 'touchstart' ? 0.5 : 0 });"
+                                                                                 "var activeTouches = type === 'touchstart' ? [touch] : [];"
+                                                                                 "target.dispatchEvent(new ownerWindow.TouchEvent(type, { bubbles: true, cancelable: true, composed: true, touches: activeTouches, targetTouches: activeTouches, changedTouches: [touch] }));"
+                                                                             "} catch (error) {}"
+                                                                         "}"
+                                                                         "if (closeTarget) { dispatchTouchEvent(hitTarget, 'touchstart'); }"
                                                                          "dispatchPointerLikeEvent(hitTarget, 'pointerover', 'PointerEvent', 0, true);"
                                                                          "dispatchPointerLikeEvent(hitTarget, 'mouseover', 'MouseEvent', 0, true);"
                                                                          "dispatchPointerLikeEvent(hitTarget, 'pointerenter', 'PointerEvent', 0, false);"
@@ -260,6 +297,7 @@ static UIColor *BrowserPageActionTextColor(void) {
                                                                          "dispatchPointerLikeEvent(hitTarget, 'mousedown', 'MouseEvent', 1, true);"
                                                                          "dispatchPointerLikeEvent(hitTarget, 'pointerup', 'PointerEvent', 0, true);"
                                                                          "dispatchPointerLikeEvent(hitTarget, 'mouseup', 'MouseEvent', 0, true);"
+                                                                         "if (closeTarget) { dispatchTouchEvent(hitTarget, 'touchend'); }"
                                                                          "if (typeof actionTarget.click === 'function') { actionTarget.click(); }"
                                                                          "else { dispatchPointerLikeEvent(hitTarget, 'click', 'MouseEvent', 0, true); }"
                                                                          "return 'true';"];

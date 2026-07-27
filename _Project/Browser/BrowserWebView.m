@@ -445,7 +445,137 @@ static NSString *BrowserYouTubeRequestCaptureScript(void) {
     "})();";
 }
 
-static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
+static NSString *BrowserFrameInteractionScript(void) {
+    return @"(function(){"
+        "if (window.__browserFrameInteractionInstalled) { return; }"
+        "window.__browserFrameInteractionInstalled = true;"
+        "var messageType = '__tvOSBrowserClickAtPoint__';"
+        "var interactiveSelector = 'a,button,input,select,textarea,label,summary,[role=\"button\"],[role=\"link\"],[role=\"menuitem\"],[role=\"switch\"],[aria-pressed],[onclick],[tabindex]';"
+        "function parentElement(element) {"
+            "if (!element) { return null; }"
+            "if (element.parentElement) { return element.parentElement; }"
+            "try {"
+                "var root = element.getRootNode ? element.getRootNode() : null;"
+                "return root && root.host ? root.host : null;"
+            "} catch (error) { return null; }"
+        "}"
+        "function looksLikeClose(element) {"
+            "if (!element) { return false; }"
+            "var text = (element.textContent || '').replace(/\\s+/g, ' ').trim();"
+            "var shortText = text.length <= 4 ? text : '';"
+            "var value = ["
+                "element.id || '',"
+                "element.className || '',"
+                "element.getAttribute ? (element.getAttribute('aria-label') || '') : '',"
+                "element.getAttribute ? (element.getAttribute('title') || '') : '',"
+                "element.getAttribute ? (element.getAttribute('data-dismiss') || '') : '',"
+                "element.getAttribute ? (element.getAttribute('data-action') || '') : '',"
+                "shortText"
+            "].join(' ').toLowerCase();"
+            "var matched = (/(^|[^a-z])(close|dismiss|cancel|exit)([^a-z]|$)/).test(value) ||"
+                "value.indexOf('modal-close') !== -1 ||"
+                "value.indexOf('popup-close') !== -1 ||"
+                "value.indexOf('icon-close') !== -1 ||"
+                "shortText === '×' || shortText === '✕' || shortText === '✖' || shortText === 'x' || shortText === 'X';"
+            "if (!matched) { return false; }"
+            "if (shortText === '×' || shortText === '✕' || shortText === '✖' || shortText === 'x' || shortText === 'X') { return true; }"
+            "var buttonLike = element.matches && element.matches('button,a,[role=\"button\"],[onclick],[tabindex]');"
+            "if (buttonLike) { return true; }"
+            "try {"
+                "var rect = element.getBoundingClientRect();"
+                "return rect.width > 0 && rect.height > 0 && rect.width <= 160 && rect.height <= 160;"
+            "} catch (error) { return false; }"
+        "}"
+        "function actionTargetForElement(element) {"
+            "var candidate = element;"
+            "var fallback = null;"
+            "var depth = 0;"
+            "while (candidate && depth < 16) {"
+                "if (looksLikeClose(candidate)) { return candidate; }"
+                "if (!fallback && candidate.matches && candidate.matches(interactiveSelector)) { fallback = candidate; }"
+                "candidate = parentElement(candidate);"
+                "depth += 1;"
+            "}"
+            "return fallback || element;"
+        "}"
+        "function deepestElementAtPoint(root, x, y) {"
+            "if (!root || typeof root.elementFromPoint !== 'function') { return null; }"
+            "var element = root.elementFromPoint(x, y);"
+            "if (element && element.shadowRoot && typeof element.shadowRoot.elementFromPoint === 'function') {"
+                "var shadowElement = deepestElementAtPoint(element.shadowRoot, x, y);"
+                "if (shadowElement) { return shadowElement; }"
+            "}"
+            "return element;"
+        "}"
+        "function dispatchMouseLike(target, type, constructorName, buttons, bubbles, x, y) {"
+            "try {"
+                "var Constructor = window[constructorName];"
+                "if (Constructor) {"
+                    "var options = { bubbles: bubbles, cancelable: true, composed: true, view: window, detail: 1, clientX: x, clientY: y, screenX: x, screenY: y, button: 0, buttons: buttons };"
+                    "if (constructorName === 'PointerEvent') {"
+                        "options.pointerId = 1;"
+                        "options.pointerType = 'mouse';"
+                        "options.isPrimary = true;"
+                        "options.width = 1;"
+                        "options.height = 1;"
+                        "options.pressure = buttons ? 0.5 : 0;"
+                    "}"
+                    "target.dispatchEvent(new Constructor(type, options));"
+                    "return;"
+                "}"
+            "} catch (error) {}"
+            "try {"
+                "var event = document.createEvent('MouseEvents');"
+                "event.initMouseEvent(type, bubbles, true, window, 1, x, y, x, y, false, false, false, false, 0, null);"
+                "target.dispatchEvent(event);"
+            "} catch (error) {}"
+        "}"
+        "function dispatchTouch(target, type, x, y) {"
+            "try {"
+                "if (!window.Touch || !window.TouchEvent) { return; }"
+                "var touch = new Touch({ identifier: 1, target: target, clientX: x, clientY: y, screenX: x, screenY: y, pageX: x + window.scrollX, pageY: y + window.scrollY, radiusX: 1, radiusY: 1, force: type === 'touchstart' ? 0.5 : 0 });"
+                "var activeTouches = type === 'touchstart' ? [touch] : [];"
+                "target.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, composed: true, touches: activeTouches, targetTouches: activeTouches, changedTouches: [touch] }));"
+            "} catch (error) {}"
+        "}"
+        "function performClickAtPoint(x, y) {"
+            "if (!isFinite(x) || !isFinite(y)) { return false; }"
+            "var hitTarget = deepestElementAtPoint(document, x, y);"
+            "if (!hitTarget) { return false; }"
+            "if (hitTarget.tagName && hitTarget.tagName.toLowerCase() === 'iframe') {"
+                "try {"
+                    "var frameRect = hitTarget.getBoundingClientRect();"
+                    "var frameScaleX = frameRect.width > 0 && hitTarget.clientWidth > 0 ? hitTarget.clientWidth / frameRect.width : 1;"
+                    "var frameScaleY = frameRect.height > 0 && hitTarget.clientHeight > 0 ? hitTarget.clientHeight / frameRect.height : 1;"
+                    "hitTarget.contentWindow.postMessage({ type: messageType, x: (x - frameRect.left) * frameScaleX, y: (y - frameRect.top) * frameScaleY }, '*');"
+                    "return true;"
+                "} catch (error) { return false; }"
+            "}"
+            "var actionTarget = actionTargetForElement(hitTarget);"
+            "if (!actionTarget) { return false; }"
+            "try { if (actionTarget.focus) { actionTarget.focus({ preventScroll: true }); } } catch (error) {}"
+            "if (looksLikeClose(actionTarget)) { dispatchTouch(hitTarget, 'touchstart', x, y); }"
+            "dispatchMouseLike(hitTarget, 'pointerover', 'PointerEvent', 0, true, x, y);"
+            "dispatchMouseLike(hitTarget, 'mouseover', 'MouseEvent', 0, true, x, y);"
+            "dispatchMouseLike(hitTarget, 'pointerdown', 'PointerEvent', 1, true, x, y);"
+            "dispatchMouseLike(hitTarget, 'mousedown', 'MouseEvent', 1, true, x, y);"
+            "dispatchMouseLike(hitTarget, 'pointerup', 'PointerEvent', 0, true, x, y);"
+            "dispatchMouseLike(hitTarget, 'mouseup', 'MouseEvent', 0, true, x, y);"
+            "if (looksLikeClose(actionTarget)) { dispatchTouch(hitTarget, 'touchend', x, y); }"
+            "if (typeof actionTarget.click === 'function') { actionTarget.click(); }"
+            "else { dispatchMouseLike(hitTarget, 'click', 'MouseEvent', 0, true, x, y); }"
+            "return true;"
+        "}"
+        "window.__browserFrameClickAtPoint = performClickAtPoint;"
+        "window.addEventListener('message', function(event) {"
+            "var data = event && event.data;"
+            "if (!data || data.type !== messageType) { return; }"
+            "performClickAtPoint(Number(data.x), Number(data.y));"
+        "}, false);"
+    "})();";
+}
+
+static void BrowserInstallUserScripts(id configuration) {
     if (configuration == nil) {
         return;
     }
@@ -476,10 +606,16 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
         return;
     }
 
-    id userScript = ((id (*)(id, SEL))objc_msgSend)((id)userScriptClass, @selector(alloc));
-    userScript = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(userScript, userScriptInitializer, BrowserYouTubeRequestCaptureScript(), 0, NO);
-    if (userScript != nil) {
-        ((void (*)(id, SEL, id))objc_msgSend)(userContentController, addUserScriptSelector, userScript);
+    NSArray<NSString *> *scriptSources = @[
+        BrowserYouTubeRequestCaptureScript(),
+        BrowserFrameInteractionScript(),
+    ];
+    for (NSString *scriptSource in scriptSources) {
+        id userScript = ((id (*)(id, SEL))objc_msgSend)((id)userScriptClass, @selector(alloc));
+        userScript = ((id (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(userScript, userScriptInitializer, scriptSource, 0, NO);
+        if (userScript != nil) {
+            ((void (*)(id, SEL, id))objc_msgSend)(userContentController, addUserScriptSelector, userScript);
+        }
     }
 }
 
@@ -534,7 +670,7 @@ static void BrowserInstallYouTubeCaptureUserScript(id configuration) {
         ((void (*)(id, SEL, BOOL))objc_msgSend)(configuration, allowsInlineMediaPlaybackSelector, allowsInlineMediaPlayback);
     }
     BrowserConfigurePrivateMediaPreferences(configuration);
-    BrowserInstallYouTubeCaptureUserScript(configuration);
+    BrowserInstallUserScripts(configuration);
 
     id webViewObject = ((id (*)(id, SEL))objc_msgSend)((id)webViewClass, @selector(alloc));
     SEL initializer = NSSelectorFromString(@"initWithFrame:configuration:");
@@ -1068,15 +1204,9 @@ windowFeatures:(id)windowFeatures {
         return;
     }
 
-    __block NSInteger remainingCount = cookies.count;
-    __block BOOL finished = cookies.count == 0;
     for (NSHTTPCookie *cookie in cookies) {
-        ((void (*)(id, SEL, id, id))objc_msgSend)(cookieStore, selector, cookie, ^{
-            remainingCount -= 1;
-            finished = remainingCount == 0;
-        });
+        ((void (*)(id, SEL, id, id))objc_msgSend)(cookieStore, selector, cookie, ^{});
     }
-    BrowserPumpRunLoopUntil(&finished);
 }
 
 + (NSSet<NSString *> *)allWebsiteDataTypes {
