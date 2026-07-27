@@ -10,6 +10,7 @@
         _previousURL = @"";
         _title = @"New Tab";
         _URLString = @"";
+        _showsFavoritesHome = YES;
         _savedScrollOffset = CGPointZero;
         _hasSavedScrollOffset = NO;
         _needsScrollRestore = NO;
@@ -29,11 +30,18 @@
     NSString *URLString = [sessionRepresentation[@"URLString"] isKindOfClass:[NSString class]] ? sessionRepresentation[@"URLString"] : @"";
     NSNumber *scrollOffsetX = [sessionRepresentation[@"scrollOffsetX"] isKindOfClass:[NSNumber class]] ? sessionRepresentation[@"scrollOffsetX"] : nil;
     NSNumber *scrollOffsetY = [sessionRepresentation[@"scrollOffsetY"] isKindOfClass:[NSNumber class]] ? sessionRepresentation[@"scrollOffsetY"] : nil;
+    NSNumber *showsFavoritesHome =
+        [sessionRepresentation[@"showsFavoritesHome"] isKindOfClass:NSNumber.class]
+            ? sessionRepresentation[@"showsFavoritesHome"]
+            : nil;
     
     self.requestURL = requestURL;
     self.previousURL = previousURL;
     self.title = title.length > 0 ? title : @"New Tab";
     self.URLString = URLString;
+    self.showsFavoritesHome = showsFavoritesHome != nil
+        ? showsFavoritesHome.boolValue
+        : (requestURL.length == 0 && URLString.length == 0);
     if (scrollOffsetX != nil && scrollOffsetY != nil) {
         self.savedScrollOffset = CGPointMake(scrollOffsetX.doubleValue, scrollOffsetY.doubleValue);
         self.hasSavedScrollOffset = YES;
@@ -49,6 +57,7 @@
     representation[@"previousURL"] = self.previousURL ?: @"";
     representation[@"title"] = self.title ?: @"New Tab";
     representation[@"URLString"] = self.URLString ?: @"";
+    representation[@"showsFavoritesHome"] = @(self.showsFavoritesHome);
     if (self.hasSavedScrollOffset) {
         representation[@"scrollOffsetX"] = @(self.savedScrollOffset.x);
         representation[@"scrollOffsetY"] = @(self.savedScrollOffset.y);

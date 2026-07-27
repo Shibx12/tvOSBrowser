@@ -6,7 +6,6 @@
 @interface BrowserNavigationService : NSObject
 
 - (instancetype)initWithPreferencesStore:(BrowserPreferencesStore *)preferencesStore;
-- (NSURLRequest *)homePageRequest;
 - (NSURLRequest *)requestForURLString:(NSString *)URLString;
 - (NSURLRequest *)requestForEnteredAddressString:(NSString *)addressString;
 - (NSURLRequest *)googleSearchRequestForQuery:(NSString *)query;

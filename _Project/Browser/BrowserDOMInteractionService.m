@@ -2,10 +2,31 @@
 
 #import "BrowserWebView.h"
 
-static NSString * const kInteractiveElementSelector = @"a, button, input, textarea, select, option, label, summary, [role='button'], [onclick], [tabindex]";
+static NSString * const kInteractiveElementSelector = @"a, button, input, textarea, select, option, label, summary, [role='button'], [role='link'], [role='tab'], [role='menuitem'], [role='menuitemcheckbox'], [role='menuitemradio'], [role='switch'], [role='checkbox'], [role='radio'], [aria-pressed], [aria-expanded], [aria-controls], [onclick], [tabindex]";
 static NSString * const kEditableElementSelector = @"input, textarea, select, [contenteditable='true'], [contenteditable=''], [contenteditable]";
 
+@interface BrowserDOMInteractionService ()
+
+@property (nonatomic) BOOL evaluatingJavaScript;
+
+@end
+
 @implementation BrowserDOMInteractionService
+
+- (NSString *)evaluateJavaScript:(NSString *)script webView:(BrowserWebView *)webView {
+    if (script.length == 0 || webView == nil || self.evaluatingJavaScript) {
+        return nil;
+    }
+
+    self.evaluatingJavaScript = YES;
+    NSString *result = nil;
+    @try {
+        result = [webView stringByEvaluatingJavaScriptFromString:script];
+    } @finally {
+        self.evaluatingJavaScript = NO;
+    }
+    return result;
+}
 
 - (CGPoint)DOMPointForCursorOrigin:(CGPoint)cursorOrigin
                             inView:(UIView *)containerView
@@ -15,7 +36,7 @@ static NSString * const kEditableElementSelector = @"input, textarea, select, [c
         return point;
     }
 
-    NSInteger displayWidth = [[webView stringByEvaluatingJavaScriptFromString:@"window.innerWidth"] integerValue];
+    NSInteger displayWidth = [[self evaluateJavaScript:@"window.innerWidth" webView:webView] integerValue];
     if (displayWidth <= 0) {
         return point;
     }
@@ -43,6 +64,10 @@ static NSString * const kEditableElementSelector = @"input, textarea, select, [c
                         @"(function(){"
                         "var x=%ld;"
                         "var y=%ld;"
+                        "var resolvedClientX=x;"
+                        "var resolvedClientY=y;"
+                        "var resolvedDocument=document;"
+                        "var resolvedWindow=window;"
                         "var interactiveSelector=\"%@\";"
                         "var editableSelector=\"%@\";"
                         "function resolveElement(root, px, py) {"
@@ -50,11 +75,13 @@ static NSString * const kEditableElementSelector = @"input, textarea, select, [c
                             "var element = root.elementFromPoint(px, py);"
                             "while (element) {"
                                 "if (element.shadowRoot && typeof element.shadowRoot.elementFromPoint === 'function') {"
-                                    "var shadowRect = element.getBoundingClientRect();"
-                                    "var shadowElement = resolveElement(element.shadowRoot, px - shadowRect.left, py - shadowRect.top);"
+                                    "var shadowElement = resolveElement(element.shadowRoot, px, py);"
+                                    "if (!shadowElement) {"
+                                        "var shadowRect = element.getBoundingClientRect();"
+                                        "shadowElement = resolveElement(element.shadowRoot, px - shadowRect.left, py - shadowRect.top);"
+                                    "}"
                                     "if (shadowElement && shadowElement !== element) {"
-                                        "element = shadowElement;"
-                                        "continue;"
+                                        "return shadowElement;"
                                     "}"
                                 "}"
                                 "if (element.tagName === 'IFRAME') {"
@@ -63,24 +90,48 @@ static NSString * const kEditableElementSelector = @"input, textarea, select, [c
                                         "var frameDocument = element.contentDocument;"
                                         "var frameElement = resolveElement(frameDocument, px - frameRect.left, py - frameRect.top);"
                                         "if (frameElement) {"
-                                            "element = frameElement;"
-                                            "continue;"
+                                            "return frameElement;"
                                         "}"
                                     "} catch (error) {}"
                                 "}"
+                                "resolvedClientX = px;"
+                                "resolvedClientY = py;"
+                                "resolvedDocument = element.ownerDocument || document;"
+                                "resolvedWindow = resolvedDocument.defaultView || window;"
                                 "return element;"
                             "}"
                             "return null;"
                         "}"
+                        "function browserParentElement(element) {"
+                            "if (!element) { return null; }"
+                            "if (element.parentElement) { return element.parentElement; }"
+                            "try {"
+                                "var root = element.getRootNode ? element.getRootNode() : null;"
+                                "return root && root.host ? root.host : null;"
+                            "} catch (error) { return null; }"
+                        "}"
                         "function closestMatch(element, selector) {"
                             "while (element) {"
                                 "if (element.matches && element.matches(selector)) { return element; }"
-                                "element = element.parentElement;"
+                                "element = browserParentElement(element);"
+                            "}"
+                            "return null;"
+                        "}"
+                        "function closestInteractiveElement(element) {"
+                            "var candidate = element;"
+                            "while (candidate) {"
+                                "if (candidate.matches && candidate.matches(interactiveSelector)) { return candidate; }"
+                                "try {"
+                                    "var ownerWindow = candidate.ownerDocument && candidate.ownerDocument.defaultView;"
+                                    "var style = ownerWindow && ownerWindow.getComputedStyle ? ownerWindow.getComputedStyle(candidate) : null;"
+                                    "if (style && style.cursor === 'pointer') { return candidate; }"
+                                "} catch (error) {}"
+                                "candidate = browserParentElement(candidate);"
                             "}"
                             "return null;"
                         "}"
                         "var resolvedElement = resolveElement(document, x, y);"
-                        "var interactiveElement = closestMatch(resolvedElement, interactiveSelector);"
+                        "var interactiveElement = closestInteractiveElement(resolvedElement);"
                         "var editableElement = closestMatch(resolvedElement, editableSelector);"
                         "%@"
                         "})()",
@@ -89,7 +140,7 @@ static NSString * const kEditableElementSelector = @"input, textarea, select, [c
                         kInteractiveElementSelector,
                         kEditableElementSelector,
                         body];
-    return [webView stringByEvaluatingJavaScriptFromString:script] ?: @"";
+    return [self evaluateJavaScript:script webView:webView] ?: @"";
 }
 
 - (NSString *)evaluateEditableElementJavaScriptAtPoint:(CGPoint)point
@@ -565,7 +616,7 @@ static NSString * const kEditableElementSelector = @"input, textarea, select, [c
 
     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:0.75];
     while ([deadline timeIntervalSinceNow] > 0) {
-        NSString *result = [webView stringByEvaluatingJavaScriptFromString:@"window.__browserPrimedVideoInfo || ''"];
+        NSString *result = [self evaluateJavaScript:@"window.__browserPrimedVideoInfo || ''" webView:webView];
         NSDictionary *videoInfo = [self JSONObjectFromJavaScriptString:result];
         if (videoInfo.count > 0) {
             return videoInfo;

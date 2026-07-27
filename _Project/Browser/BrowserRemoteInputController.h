@@ -9,18 +9,20 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable UIViewController *)browserRemoteInputControllerPresentedViewController;
 - (BOOL)browserRemoteInputControllerTopBarFocusActive;
 - (BOOL)browserRemoteInputControllerCanActivateTopBarFocus;
+- (BOOL)browserRemoteInputControllerShouldExitTopBarForDownPress;
 - (void)browserRemoteInputControllerActivateTopBarFocus;
 - (void)browserRemoteInputControllerDeactivateTopBarFocus;
-- (BOOL)browserRemoteInputControllerTabOverviewVisible;
-- (BOOL)browserRemoteInputControllerTabOverviewContainsPoint:(CGPoint)point;
-- (BOOL)browserRemoteInputControllerHandleTabOverviewSelectionAtPoint:(CGPoint)point;
-- (void)browserRemoteInputControllerDismissTabOverview;
-- (void)browserRemoteInputControllerHandleTabOverviewAlternateAction;
 - (void)browserRemoteInputControllerHandlePrimaryAction;
+- (BOOL)browserRemoteInputControllerHandleLongSelectPress;
+- (void)browserRemoteInputControllerHandleTripleSelectPress;
 - (void)browserRemoteInputControllerHandleMenuPress;
 - (void)browserRemoteInputControllerHandlePlayPausePress;
 - (void)browserRemoteInputControllerHandleAdvancedMenuPress;
 - (NSString *)browserRemoteInputControllerHoverStateAtCursorPoint:(CGPoint)point;
+- (CGPoint)browserRemoteInputControllerSnapPointForCursorPoint:(CGPoint)point;
+- (void)browserRemoteInputControllerDidMoveCursorToPoint:(CGPoint)point;
+- (void)browserRemoteInputControllerDidScrollByDeltaY:(CGFloat)deltaY
+                                        contentOffsetY:(CGFloat)contentOffsetY;
 - (void)browserRemoteInputControllerSetWebInteractionEnabled:(BOOL)enabled;
 - (void)browserRemoteInputControllerPersistSession;
 
@@ -41,6 +43,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)handleGlobalSelectPressEndedNotification;
 - (void)handlePressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event;
 - (BOOL)handlePressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event;
+- (void)handlePressesCancelled:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event;
 - (BOOL)handleTouchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event;
 - (BOOL)handleTouchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event;
 - (void)handleTouchesEnded;

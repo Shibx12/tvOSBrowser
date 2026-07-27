@@ -4,7 +4,6 @@
 #import "BrowserPreferencesStore.h"
 #import "BrowserSessionStore.h"
 #import "BrowserTabViewModel.h"
-#import "BrowserTopBarView.h"
 #import "BrowserViewModel.h"
 #import "BrowserWebView.h"
 
@@ -19,7 +18,6 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
 @property (nonatomic) BrowserSessionStore *sessionStore;
 @property (nonatomic, weak) UIView *browserContainerView;
 @property (nonatomic, weak) UIView *rootView;
-@property (nonatomic, weak) BrowserTopBarView *topMenuView;
 @property (nonatomic, weak) UIImageView *cursorView;
 @property (nonatomic, weak) UIPanGestureRecognizer *manualScrollPanRecognizer;
 @property (nonatomic, weak) id webViewDelegate;
@@ -27,6 +25,8 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
 @property (nonatomic) NSMutableDictionary<NSString *, BrowserWebView *> *webViewsByTabIdentifier;
 @property (nonatomic) UIView *thumbnailStagingView;
 @property (nonatomic, readwrite, nullable) BrowserWebView *activeWebView;
+@property (nonatomic) CGFloat lastObservedScrollOffsetY;
+@property (nonatomic) BOOL observingScrollGesture;
 
 @end
 
@@ -39,7 +39,6 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
                 sessionStore:(BrowserSessionStore *)sessionStore
           browserContainerView:(UIView *)browserContainerView
                     rootView:(UIView *)rootView
-                  topMenuView:(BrowserTopBarView *)topMenuView
                   cursorView:(UIImageView *)cursorView
      manualScrollPanRecognizer:(UIPanGestureRecognizer *)manualScrollPanRecognizer
              webViewDelegate:(id)webViewDelegate
@@ -53,7 +52,6 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
         _sessionStore = sessionStore;
         _browserContainerView = browserContainerView;
         _rootView = rootView;
-        _topMenuView = topMenuView;
         _cursorView = cursorView;
         _manualScrollPanRecognizer = manualScrollPanRecognizer;
         _webViewDelegate = webViewDelegate;
@@ -85,37 +83,16 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
     self.activeTab.previousURL = previousURL ?: @"";
 }
 
-- (BOOL)topNavigationVisible {
-    return self.viewModel.topNavigationBarVisible;
-}
-
-- (CGFloat)topMenuBrowserOffset {
-    return self.topNavigationVisible ? self.topMenuView.frame.size.height : 0.0;
-}
-
-- (void)setTopNavigationVisible:(BOOL)visible {
-    self.viewModel.topNavigationBarVisible = visible;
-    self.topMenuView.hidden = !visible;
-    [self updateTopNavAndWebView];
-}
-
 - (void)updateTopNavAndWebView {
     if (self.activeWebView == nil) {
         return;
     }
-    if (self.topNavigationVisible) {
-        self.activeWebView.frame = CGRectMake(self.rootView.bounds.origin.x,
-                                              self.rootView.bounds.origin.y + self.topMenuBrowserOffset,
-                                              self.rootView.bounds.size.width,
-                                              self.rootView.bounds.size.height - self.topMenuBrowserOffset);
-    } else {
-        self.activeWebView.frame = self.rootView.bounds;
-    }
+    self.activeWebView.frame = self.browserContainerView.bounds;
 }
 
 - (CGSize)thumbnailViewportSize {
     CGFloat width = CGRectGetWidth(self.rootView.bounds);
-    CGFloat height = CGRectGetHeight(self.rootView.bounds) - self.topMenuBrowserOffset;
+    CGFloat height = CGRectGetHeight(self.rootView.bounds);
     return CGSizeMake(MAX(width, 1.0), MAX(height, 1.0));
 }
 
@@ -219,52 +196,75 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
 - (void)refreshActiveTabUI {
     BrowserTabViewModel *tab = self.activeTab;
     if (tab == nil) {
-        self.topMenuView.URLLabel.text = @"";
+        [self.host browserTabCoordinatorDidChangeState];
         return;
     }
 
     NSURLRequest *request = self.activeWebView.request;
-    NSString *currentURL = tab.URLString.length > 0 ? tab.URLString : request.URL.absoluteString;
-    self.topMenuView.URLLabel.text = currentURL.length > 0 ? currentURL : @"New Tab";
-
     if (request != nil) {
         [self.host browserTabCoordinatorUpdateTextFontSize];
     }
+    [self.host browserTabCoordinatorDidChangeState];
 }
 
 - (BOOL)restoreBrowserSession {
     return [self.sessionStore restoreSessionIntoViewModel:self.viewModel];
 }
 
+- (BOOL)tabRepresentsLegacyGoogleHome:(BrowserTabViewModel *)tab {
+    NSString *URLString = tab.URLString.length > 0 ? tab.URLString : tab.requestURL;
+    NSURL *URL = [NSURL URLWithString:URLString];
+    NSString *host = URL.host.lowercaseString;
+    NSString *path = URL.path;
+    BOOL googleHost = [host isEqualToString:@"google.com"] ||
+        [host isEqualToString:@"www.google.com"];
+    BOOL rootPath = path.length == 0 || [path isEqualToString:@"/"];
+    return googleHost && rootPath && URL.query.length == 0;
+}
+
 - (void)restoreInitialStateOrCreateFirstTab {
-    self.topMenuView.hidden = !self.viewModel.topNavigationBarVisible;
     if (![self restoreBrowserSession]) {
-        [self createNewTabLoadingHomePage:NO];
+        [self createNewTabLoadingHomePage:YES];
         return;
     }
     [self initWebView];
+    if (self.activeTab.showsFavoritesHome ||
+        [self tabRepresentsLegacyGoogleHome:self.activeTab]) {
+        [self loadHomePage];
+        return;
+    }
     [self refreshActiveTabUI];
 }
 
 - (void)webViewDidAppear {
     NSURLRequest *savedReopenRequest = [self.sessionStore consumeSavedURLToReopenRequestWithNavigationService:self.navigationService];
     if (savedReopenRequest != nil) {
+        self.activeTab.showsFavoritesHome = NO;
         [self.activeWebView loadRequest:savedReopenRequest];
-    } else if (self.activeWebView.request == nil) {
+    } else if (!self.activeTab.showsFavoritesHome && self.activeWebView.request == nil) {
         [self loadStoredContentForTab:self.activeTab webView:self.activeWebView fallbackToHomePage:YES];
     }
 }
 
 - (void)loadHomePage {
-    NSURLRequest *homePageRequest = [self.navigationService homePageRequest];
-    if (homePageRequest != nil) {
-        [self.activeWebView loadRequest:homePageRequest];
+    BrowserTabViewModel *tab = self.activeTab;
+    if (tab == nil) {
+        return;
     }
+    tab.showsFavoritesHome = YES;
+    tab.loading = NO;
+    tab.requestURL = @"";
+    tab.previousURL = @"";
+    tab.URLString = @"";
+    tab.title = @"Favorites";
+    tab.savedScrollOffset = CGPointZero;
+    tab.hasSavedScrollOffset = NO;
+    tab.needsScrollRestore = NO;
+    [self refreshActiveTabUI];
+    [self persistSession];
 }
 
 - (void)initWebView {
-    self.topMenuView.hidden = !self.viewModel.topNavigationBarVisible;
-
     BrowserTabViewModel *tab = [self.viewModel ensureActiveTab];
     if (tab == nil) {
         return;
@@ -300,7 +300,6 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
     }
 
     self.activeWebView = activeWebView;
-    [self.topMenuView.loadingSpinner stopAnimating];
     [self.activeWebView removeFromSuperview];
     [self.browserContainerView addSubview:self.activeWebView];
     [self updateTopNavAndWebView];
@@ -312,8 +311,7 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
     [self.rootView layoutIfNeeded];
     scrollView.bounces = self.scrollViewAllowBounces;
 
-    BOOL shouldAllowWebInteraction = ![self.host browserTabCoordinatorIsCursorModeEnabled] &&
-        ![self.host browserTabCoordinatorIsTabOverviewVisible];
+    BOOL shouldAllowWebInteraction = ![self.host browserTabCoordinatorIsCursorModeEnabled];
     scrollView.scrollEnabled = shouldAllowWebInteraction;
     self.activeWebView.userInteractionEnabled = shouldAllowWebInteraction;
     self.manualScrollPanRecognizer.enabled = shouldAllowWebInteraction;
@@ -351,24 +349,19 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
     }
 
     NSString *URLString = tab.URLString.length > 0 ? tab.URLString : tab.requestURL;
-    if (URLString.length == 0) {
+    if (tab.showsFavoritesHome || URLString.length == 0) {
         if (fallbackToHomePage) {
-            NSURLRequest *homePageRequest = [self.navigationService homePageRequest];
-            if (homePageRequest != nil) {
-                [webView loadRequest:homePageRequest];
-            }
+            [self loadHomePage];
         }
         return;
     }
 
     NSURLRequest *request = [self.navigationService requestForURLString:URLString];
     if (request != nil) {
+        tab.showsFavoritesHome = NO;
         [webView loadRequest:request];
     } else if (fallbackToHomePage) {
-        NSURLRequest *homePageRequest = [self.navigationService homePageRequest];
-        if (homePageRequest != nil) {
-            [webView loadRequest:homePageRequest];
-        }
+        [self loadHomePage];
     }
 }
 
@@ -423,31 +416,6 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
     [self captureSnapshotForTab:self.activeTab];
 }
 
-- (void)prepareTabOverviewThumbnails {
-    [self updateThumbnailStagingViewFrame];
-
-    for (BrowserTabViewModel *tab in self.viewModel.tabs) {
-        BrowserWebView *webView = self.webViewsByTabIdentifier[tab.identifier];
-        if (tab == self.activeTab) {
-            [self captureSnapshotForTab:tab];
-            continue;
-        }
-
-        if (webView == nil) {
-            webView = [self createConfiguredWebView];
-            self.webViewsByTabIdentifier[tab.identifier] = webView;
-        }
-
-        [self parkWebViewForThumbnailing:webView];
-        if (webView.request == nil) {
-            [self loadStoredContentForTab:tab webView:webView fallbackToHomePage:NO];
-            continue;
-        }
-
-        [self captureSnapshotForTab:tab];
-    }
-}
-
 - (void)showMaxTabsAlert {
     UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Maximum Tabs Reached"
                                                                              message:@"This build keeps up to five tabs open at once."
@@ -482,10 +450,12 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
     }
 
     [self captureSnapshotForTab:self.activeTab];
-    if ([self.viewModel addTab] == nil) {
+    BrowserTabViewModel *tab = [self.viewModel addTab];
+    if (tab == nil) {
         [self showMaxTabsAlert];
         return NO;
     }
+    tab.showsFavoritesHome = NO;
 
     [self initWebView];
     [self refreshActiveTabUI];
@@ -565,12 +535,6 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
 }
 
 - (void)handleWebViewPanGesture:(UIPanGestureRecognizer *)gestureRecognizer {
-    if (gestureRecognizer.state != UIGestureRecognizerStateEnded &&
-        gestureRecognizer.state != UIGestureRecognizerStateCancelled &&
-        gestureRecognizer.state != UIGestureRecognizerStateFailed) {
-        return;
-    }
-
     UIView *gestureView = gestureRecognizer.view;
     if (![gestureView isKindOfClass:[UIScrollView class]]) {
         return;
@@ -581,7 +545,29 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
         return;
     }
 
-    [self persistSession];
+    if (gestureRecognizer.state == UIGestureRecognizerStateBegan) {
+        self.observingScrollGesture = YES;
+        self.lastObservedScrollOffsetY = scrollView.contentOffset.y;
+        return;
+    }
+
+    if (gestureRecognizer.state == UIGestureRecognizerStateChanged && self.observingScrollGesture) {
+        CGFloat contentOffsetY = scrollView.contentOffset.y;
+        CGFloat deltaY = contentOffsetY - self.lastObservedScrollOffsetY;
+        self.lastObservedScrollOffsetY = contentOffsetY;
+        if (fabs(deltaY) > 0.01) {
+            [self.host browserTabCoordinatorDidScrollByDeltaY:deltaY
+                                                contentOffsetY:contentOffsetY];
+        }
+        return;
+    }
+
+    if (gestureRecognizer.state == UIGestureRecognizerStateEnded ||
+        gestureRecognizer.state == UIGestureRecognizerStateCancelled ||
+        gestureRecognizer.state == UIGestureRecognizerStateFailed) {
+        self.observingScrollGesture = NO;
+        [self persistSession];
+    }
 }
 
 - (BOOL)isPrimaryDocumentRequest:(NSURLRequest *)request {
@@ -610,6 +596,7 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
     if (tab == nil || ![self isPrimaryDocumentRequest:request]) {
         return;
     }
+    tab.showsFavoritesHome = NO;
     NSString *requestURL = request.URL.absoluteString ?: @"";
     if (tab.URLString.length > 0 && ![tab.URLString isEqualToString:requestURL]) {
         tab.savedScrollOffset = CGPointZero;
@@ -617,6 +604,7 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
         tab.needsScrollRestore = NO;
     }
     tab.requestURL = requestURL;
+    [self.host browserTabCoordinatorDidChangeState];
 }
 
 - (void)webViewDidStartLoad:(id)webView {
@@ -625,10 +613,9 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
         return;
     }
 
-    if (tab == self.activeTab && ![tab.previousURL isEqualToString:tab.requestURL]) {
-        [self.topMenuView.loadingSpinner startAnimating];
-    }
+    tab.loading = YES;
     tab.previousURL = tab.requestURL;
+    [self.host browserTabCoordinatorDidChangeState];
 }
 
 - (void)webViewDidFinishLoad:(id)webView {
@@ -637,9 +624,7 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
         return;
     }
 
-    if (tab == self.activeTab) {
-        [self.topMenuView.loadingSpinner stopAnimating];
-    }
+    tab.loading = NO;
 
     NSString *theTitle = [webView stringByEvaluatingJavaScriptFromString:@"document.title"];
     NSURLRequest *request = [webView request];
@@ -656,6 +641,16 @@ static CGFloat const kThumbnailStagingOffset = 4096.0;
         [self captureSnapshotForTab:tab];
         [self persistSession];
     }
+    [self.host browserTabCoordinatorDidChangeState];
+}
+
+- (void)webViewDidFailLoad:(id)webView {
+    BrowserTabViewModel *tab = [self tabForWebView:webView];
+    if (tab == nil) {
+        return;
+    }
+    tab.loading = NO;
+    [self.host browserTabCoordinatorDidChangeState];
 }
 
 @end

@@ -8,6 +8,8 @@
 @property (nonatomic, copy) NSString *title;
 @property (nonatomic, copy) NSString *URLString;
 @property (nonatomic, strong) UIImage *snapshotImage;
+@property (nonatomic, getter=isLoading) BOOL loading;
+@property (nonatomic) BOOL showsFavoritesHome;
 @property (nonatomic) CGPoint savedScrollOffset;
 @property (nonatomic) BOOL hasSavedScrollOffset;
 @property (nonatomic) BOOL needsScrollRestore;

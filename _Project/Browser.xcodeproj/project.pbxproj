@@ -38,15 +38,24 @@
 		A1B49A872D6D2000001D58A1 /* BrowserVideoPlaybackCoordinator.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A862D6D2000001D58A1 /* BrowserVideoPlaybackCoordinator.m */; };
 		A1B49A892D700000001D58A1 /* BrowserPreferencesStore.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A882D700000001D58A1 /* BrowserPreferencesStore.m */; };
 		A1B49A8C2D700010001D58A1 /* BrowserTabCoordinator.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A8B2D700010001D58A1 /* BrowserTabCoordinator.m */; };
-		A1B49A8F2D700020001D58A1 /* BrowserTabOverviewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A8E2D700020001D58A1 /* BrowserTabOverviewController.m */; };
 		A1B49A922D700030001D58A1 /* BrowserPageActionCoordinator.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A912D700030001D58A1 /* BrowserPageActionCoordinator.m */; };
 		A1B49A952D700040001D58A1 /* BrowserRemoteInputController.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A942D700040001D58A1 /* BrowserRemoteInputController.m */; };
+		A1B49AA02D710000001D58A1 /* SceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A9F2D710000001D58A1 /* SceneDelegate.m */; };
 		B002B8671BAE420500C744AF /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = B002B8661BAE420500C744AF /* main.m */; };
 		B002B86A1BAE420500C744AF /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = B002B8691BAE420500C744AF /* AppDelegate.m */; };
-		A1B49AA02D710000001D58A1 /* SceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B49A9F2D710000001D58A1 /* SceneDelegate.m */; };
 		B002B86D1BAE420500C744AF /* ViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = B002B86C1BAE420500C744AF /* ViewController.m */; };
 		B002B8701BAE420500C744AF /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B002B86E1BAE420500C744AF /* Main.storyboard */; };
 		B002B8721BAE420500C744AF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B002B8711BAE420500C744AF /* Assets.xcassets */; };
+		C0D3A0010000000000000001 /* BrowserAnimationConstants.m in Sources */ = {isa = PBXBuildFile; fileRef = C0D3B0010000000000000001 /* BrowserAnimationConstants.m */; };
+		C0D3A0020000000000000002 /* BrowserAppearance.m in Sources */ = {isa = PBXBuildFile; fileRef = C0D3B0020000000000000002 /* BrowserAppearance.m */; };
+		C0D3A0030000000000000003 /* BrowserFocusCoordinator.m in Sources */ = {isa = PBXBuildFile; fileRef = C0D3B0030000000000000003 /* BrowserFocusCoordinator.m */; };
+		C0D3A0040000000000000004 /* BrowserAddressInterpreter.m in Sources */ = {isa = PBXBuildFile; fileRef = C0D3B0040000000000000004 /* BrowserAddressInterpreter.m */; };
+		C0D3A0050000000000000005 /* CompactTabCell.m in Sources */ = {isa = PBXBuildFile; fileRef = C0D3B0050000000000000005 /* CompactTabCell.m */; };
+		C0D3A0060000000000000006 /* CompactTabBarView.m in Sources */ = {isa = PBXBuildFile; fileRef = C0D3B0060000000000000006 /* CompactTabBarView.m */; };
+		C0D3A0070000000000000007 /* BrowserAddressBarView.m in Sources */ = {isa = PBXBuildFile; fileRef = C0D3B0070000000000000007 /* BrowserAddressBarView.m */; };
+		C0D3A0080000000000000008 /* BrowserToolbarView.m in Sources */ = {isa = PBXBuildFile; fileRef = C0D3B0080000000000000008 /* BrowserToolbarView.m */; };
+		C0D3A0090000000000000009 /* BrowserChromeViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = C0D3B0090000000000000009 /* BrowserChromeViewController.m */; };
+		C0D3A00A000000000000000A /* BrowserFavoritesHomeViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = C0D3B00A000000000000000A /* BrowserFavoritesHomeViewController.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -95,24 +104,42 @@
 		A1B49A882D700000001D58A1 /* BrowserPreferencesStore.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserPreferencesStore.m; sourceTree = "<group>"; };
 		A1B49A8A2D700010001D58A1 /* BrowserTabCoordinator.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserTabCoordinator.h; sourceTree = "<group>"; };
 		A1B49A8B2D700010001D58A1 /* BrowserTabCoordinator.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserTabCoordinator.m; sourceTree = "<group>"; };
-		A1B49A8D2D700020001D58A1 /* BrowserTabOverviewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserTabOverviewController.h; sourceTree = "<group>"; };
-		A1B49A8E2D700020001D58A1 /* BrowserTabOverviewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserTabOverviewController.m; sourceTree = "<group>"; };
 		A1B49A902D700030001D58A1 /* BrowserPageActionCoordinator.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserPageActionCoordinator.h; sourceTree = "<group>"; };
 		A1B49A912D700030001D58A1 /* BrowserPageActionCoordinator.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserPageActionCoordinator.m; sourceTree = "<group>"; };
 		A1B49A932D700040001D58A1 /* BrowserRemoteInputController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserRemoteInputController.h; sourceTree = "<group>"; };
 		A1B49A942D700040001D58A1 /* BrowserRemoteInputController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserRemoteInputController.m; sourceTree = "<group>"; };
+		A1B49A9E2D710000001D58A1 /* SceneDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SceneDelegate.h; sourceTree = "<group>"; };
+		A1B49A9F2D710000001D58A1 /* SceneDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SceneDelegate.m; sourceTree = "<group>"; };
 		B002B8621BAE420500C744AF /* Browser.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Browser.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B002B8661BAE420500C744AF /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		B002B8681BAE420500C744AF /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
 		B002B8691BAE420500C744AF /* AppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
-		A1B49A9E2D710000001D58A1 /* SceneDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SceneDelegate.h; sourceTree = "<group>"; };
-		A1B49A9F2D710000001D58A1 /* SceneDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SceneDelegate.m; sourceTree = "<group>"; };
 		B002B86B1BAE420500C744AF /* ViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ViewController.h; sourceTree = "<group>"; };
 		B002B86C1BAE420500C744AF /* ViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ViewController.m; sourceTree = "<group>"; };
 		B002B86F1BAE420500C744AF /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		B002B8711BAE420500C744AF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B002B8731BAE420500C744AF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B0F6B4611BAEBF9900E2F26B /* ../README.mdown */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; path = ../README.mdown; sourceTree = "<group>"; };
+		C0D3B0000000000000000001 /* BrowserAnimationConstants.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserAnimationConstants.h; sourceTree = "<group>"; };
+		C0D3B0000000000000000002 /* BrowserAppearance.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserAppearance.h; sourceTree = "<group>"; };
+		C0D3B0000000000000000003 /* BrowserFocusCoordinator.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserFocusCoordinator.h; sourceTree = "<group>"; };
+		C0D3B0000000000000000004 /* BrowserAddressInterpreter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserAddressInterpreter.h; sourceTree = "<group>"; };
+		C0D3B0000000000000000005 /* CompactTabCell.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CompactTabCell.h; sourceTree = "<group>"; };
+		C0D3B0000000000000000006 /* CompactTabBarView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CompactTabBarView.h; sourceTree = "<group>"; };
+		C0D3B0000000000000000007 /* BrowserAddressBarView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserAddressBarView.h; sourceTree = "<group>"; };
+		C0D3B0000000000000000008 /* BrowserToolbarView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserToolbarView.h; sourceTree = "<group>"; };
+		C0D3B0000000000000000009 /* BrowserChromeViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserChromeViewController.h; sourceTree = "<group>"; };
+		C0D3B000000000000000000A /* BrowserFavoritesHomeViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BrowserFavoritesHomeViewController.h; sourceTree = "<group>"; };
+		C0D3B0010000000000000001 /* BrowserAnimationConstants.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserAnimationConstants.m; sourceTree = "<group>"; };
+		C0D3B0020000000000000002 /* BrowserAppearance.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserAppearance.m; sourceTree = "<group>"; };
+		C0D3B0030000000000000003 /* BrowserFocusCoordinator.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserFocusCoordinator.m; sourceTree = "<group>"; };
+		C0D3B0040000000000000004 /* BrowserAddressInterpreter.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserAddressInterpreter.m; sourceTree = "<group>"; };
+		C0D3B0050000000000000005 /* CompactTabCell.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CompactTabCell.m; sourceTree = "<group>"; };
+		C0D3B0060000000000000006 /* CompactTabBarView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CompactTabBarView.m; sourceTree = "<group>"; };
+		C0D3B0070000000000000007 /* BrowserAddressBarView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserAddressBarView.m; sourceTree = "<group>"; };
+		C0D3B0080000000000000008 /* BrowserToolbarView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserToolbarView.m; sourceTree = "<group>"; };
+		C0D3B0090000000000000009 /* BrowserChromeViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserChromeViewController.m; sourceTree = "<group>"; };
+		C0D3B00A000000000000000A /* BrowserFavoritesHomeViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BrowserFavoritesHomeViewController.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -187,6 +214,8 @@
 		A1B49A7B2D6D0000001D58A1 /* Coordinators */ = {
 			isa = PBXGroup;
 			children = (
+				C0D3B0000000000000000003 /* BrowserFocusCoordinator.h */,
+				C0D3B0030000000000000003 /* BrowserFocusCoordinator.m */,
 				A1B49A532D68143D001D58A1 /* BrowserMenuCoordinator.h */,
 				A1B49A542D68143D001D58A1 /* BrowserMenuCoordinator.m */,
 				A1B49A902D700030001D58A1 /* BrowserPageActionCoordinator.h */,
@@ -195,8 +224,6 @@
 				A1B49A942D700040001D58A1 /* BrowserRemoteInputController.m */,
 				A1B49A8A2D700010001D58A1 /* BrowserTabCoordinator.h */,
 				A1B49A8B2D700010001D58A1 /* BrowserTabCoordinator.m */,
-				A1B49A8D2D700020001D58A1 /* BrowserTabOverviewController.h */,
-				A1B49A8E2D700020001D58A1 /* BrowserTabOverviewController.m */,
 				A1B49A852D6D2000001D58A1 /* BrowserVideoPlaybackCoordinator.h */,
 				A1B49A862D6D2000001D58A1 /* BrowserVideoPlaybackCoordinator.m */,
 			);
@@ -206,6 +233,8 @@
 		A1B49A7C2D6D0000001D58A1 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				C0D3B0000000000000000004 /* BrowserAddressInterpreter.h */,
+				C0D3B0040000000000000004 /* BrowserAddressInterpreter.m */,
 				A1B49A822D6D2000001D58A1 /* BrowserDOMInteractionService.h */,
 				A1B49A832D6D2000001D58A1 /* BrowserDOMInteractionService.m */,
 				A1B49A4C2D680900001D58A1 /* BrowserNavigationService.h */,
@@ -230,6 +259,10 @@
 		A1B49A7E2D6D0000001D58A1 /* Controllers */ = {
 			isa = PBXGroup;
 			children = (
+				C0D3B0000000000000000009 /* BrowserChromeViewController.h */,
+				C0D3B0090000000000000009 /* BrowserChromeViewController.m */,
+				C0D3B000000000000000000A /* BrowserFavoritesHomeViewController.h */,
+				C0D3B00A000000000000000A /* BrowserFavoritesHomeViewController.m */,
 				B002B86B1BAE420500C744AF /* ViewController.h */,
 				B002B86C1BAE420500C744AF /* ViewController.m */,
 				A1B49A692D6B1000001D58A1 /* BrowserNativeVideoPlayerViewController.h */,
@@ -242,6 +275,18 @@
 		A1B49A7F2D6D0000001D58A1 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				C0D3B0000000000000000001 /* BrowserAnimationConstants.h */,
+				C0D3B0010000000000000001 /* BrowserAnimationConstants.m */,
+				C0D3B0000000000000000002 /* BrowserAppearance.h */,
+				C0D3B0020000000000000002 /* BrowserAppearance.m */,
+				C0D3B0000000000000000005 /* CompactTabCell.h */,
+				C0D3B0050000000000000005 /* CompactTabCell.m */,
+				C0D3B0000000000000000006 /* CompactTabBarView.h */,
+				C0D3B0060000000000000006 /* CompactTabBarView.m */,
+				C0D3B0000000000000000007 /* BrowserAddressBarView.h */,
+				C0D3B0070000000000000007 /* BrowserAddressBarView.m */,
+				C0D3B0000000000000000008 /* BrowserToolbarView.h */,
+				C0D3B0080000000000000008 /* BrowserToolbarView.m */,
 				A1B49A592D684000001D58A1 /* BrowserTopBarView.h */,
 				A1B49A5A2D684000001D58A1 /* BrowserTopBarView.m */,
 				A1B49A642D6A3900001D58A1 /* BrowserWebView.h */,
@@ -415,12 +460,21 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C0D3A0010000000000000001 /* BrowserAnimationConstants.m in Sources */,
+				C0D3A0020000000000000002 /* BrowserAppearance.m in Sources */,
+				C0D3A0030000000000000003 /* BrowserFocusCoordinator.m in Sources */,
+				C0D3A0040000000000000004 /* BrowserAddressInterpreter.m in Sources */,
+				C0D3A0050000000000000005 /* CompactTabCell.m in Sources */,
+				C0D3A0060000000000000006 /* CompactTabBarView.m in Sources */,
+				C0D3A0070000000000000007 /* BrowserAddressBarView.m in Sources */,
+				C0D3A0080000000000000008 /* BrowserToolbarView.m in Sources */,
+				C0D3A0090000000000000009 /* BrowserChromeViewController.m in Sources */,
+				C0D3A00A000000000000000A /* BrowserFavoritesHomeViewController.m in Sources */,
 				A1B49A482D67F2B3001D58A1 /* BrowserTabViewModel.m in Sources */,
 				A1B49A552D68143D001D58A1 /* BrowserMenuCoordinator.m in Sources */,
 				A1B49A922D700030001D58A1 /* BrowserPageActionCoordinator.m in Sources */,
 				A1B49A952D700040001D58A1 /* BrowserRemoteInputController.m in Sources */,
 				A1B49A8C2D700010001D58A1 /* BrowserTabCoordinator.m in Sources */,
-				A1B49A8F2D700020001D58A1 /* BrowserTabOverviewController.m in Sources */,
 				A1B49A872D6D2000001D58A1 /* BrowserVideoPlaybackCoordinator.m in Sources */,
 				A1B49A842D6D2000001D58A1 /* BrowserDOMInteractionService.m in Sources */,
 				A1B49A4E2D680900001D58A1 /* BrowserNavigationService.m in Sources */,
@@ -576,7 +630,7 @@
 				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 3000;
-				DEVELOPMENT_TEAM = PMC4RZG4LF;
+				DEVELOPMENT_TEAM = W3KMV9UTJK;
 				EMBED_ASSET_PACKS_IN_PRODUCT_BUNDLE = YES;
 				ENABLE_ON_DEMAND_RESOURCES = NO;
 				FRAMEWORK_SEARCH_PATHS = "";
@@ -586,7 +640,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 2.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.jva.tvbrowser;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bingxuanshi.tvosbrowser;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SCAN_ALL_SOURCE_FILES_FOR_INCLUDES = NO;
 				TVOS_DEPLOYMENT_TARGET = 26.0;
@@ -601,7 +655,7 @@
 				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 3000;
-				DEVELOPMENT_TEAM = PMC4RZG4LF;
+				DEVELOPMENT_TEAM = W3KMV9UTJK;
 				EMBED_ASSET_PACKS_IN_PRODUCT_BUNDLE = YES;
 				ENABLE_ON_DEMAND_RESOURCES = NO;
 				FRAMEWORK_SEARCH_PATHS = "";
@@ -611,7 +665,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 2.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.jva.tvbrowser;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bingxuanshi.tvosbrowser;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SCAN_ALL_SOURCE_FILES_FOR_INCLUDES = NO;
 				TVOS_DEPLOYMENT_TARGET = 26.0;

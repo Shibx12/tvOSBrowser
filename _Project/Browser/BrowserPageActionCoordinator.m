@@ -164,10 +164,40 @@ static UIColor *BrowserPageActionTextColor(void) {
 }
 
 - (BOOL)handlePageSelectionAtDOMPoint:(CGPoint)point webView:(BrowserWebView *)webView {
-    if ([self.videoPlaybackCoordinator handleSelectPressForVideoAtCursor]) {
+    if ([self handleTargetBlankLinkAtDOMPoint:point webView:webView]) {
         return YES;
     }
-    if ([self handleTargetBlankLinkAtDOMPoint:point webView:webView]) {
+
+    NSString *hasWebControl = [self.domInteractionService evaluateResolvedElementJavaScriptAtPoint:point
+                                                                                           webView:webView
+                                                                                              body:@"function browserLooksLikePageControl(element) {"
+                                                                                                   "var candidate = element;"
+                                                                                                   "var depth = 0;"
+                                                                                                   "while (candidate && depth < 12) {"
+                                                                                                       "var text = (candidate.textContent || '').replace(/\\s+/g, ' ').trim();"
+                                                                                                       "var shortText = text.length <= 20 ? text : '';"
+                                                                                                       "var value = ["
+                                                                                                           "candidate.id || '',"
+                                                                                                           "candidate.className || '',"
+                                                                                                           "candidate.getAttribute ? (candidate.getAttribute('aria-label') || '') : '',"
+                                                                                                           "candidate.getAttribute ? (candidate.getAttribute('title') || '') : '',"
+                                                                                                           "candidate.getAttribute ? (candidate.getAttribute('data-tooltip') || '') : '',"
+                                                                                                           "shortText"
+                                                                                                       "].join(' ').toLowerCase();"
+                                                                                                       "if ((/(^|[^a-z])(close|dismiss|cancel|mute|unmute|volume|sound|audio|pause|captions?|subtitles?|settings|quality|fullscreen|full-screen|pip)([^a-z]|$)/).test(value) ||"
+                                                                                                           "value.indexOf('picture-in-picture') !== -1 ||"
+                                                                                                           "value.indexOf('icon-close') !== -1 ||"
+                                                                                                           "value.indexOf('modal-close') !== -1) {"
+                                                                                                           "return true;"
+                                                                                                       "}"
+                                                                                                       "candidate = browserParentElement(candidate);"
+                                                                                                       "depth += 1;"
+                                                                                                   "}"
+                                                                                                   "return false;"
+                                                                                               "}"
+                                                                                               "return (interactiveElement || browserLooksLikePageControl(resolvedElement)) ? 'true' : 'false';"];
+    if (![hasWebControl isEqualToString:@"true"] &&
+        [self.videoPlaybackCoordinator handleSelectPressForVideoAtCursor]) {
         return YES;
     }
 
@@ -193,27 +223,45 @@ static UIColor *BrowserPageActionTextColor(void) {
                                                                                                 "return type;"];
     [self.domInteractionService evaluateResolvedElementJavaScriptAtPoint:point
                                                                  webView:webView
-                                                                    body:@"var target = editableElement || interactiveElement || resolvedElement;"
-                                                                         "if (!target) { return 'false'; }"
-                                                                         "try { if (target.focus) { target.focus(); } } catch (error) {}"
-                                                                         "function dispatchPointerLikeEvent(type, constructorName) {"
+                                                                    body:@"var hitTarget = resolvedElement;"
+                                                                         "var actionTarget = editableElement || interactiveElement || hitTarget;"
+                                                                         "if (!hitTarget || !actionTarget) { return 'false'; }"
+                                                                         "try { if (actionTarget.focus) { actionTarget.focus({ preventScroll: true }); } } catch (error) {"
+                                                                             "try { if (actionTarget.focus) { actionTarget.focus(); } } catch (ignoredError) {}"
+                                                                         "}"
+                                                                         "function dispatchPointerLikeEvent(target, type, constructorName, buttons, bubbles) {"
+                                                                             "var ownerDocument = target.ownerDocument || resolvedDocument || document;"
+                                                                             "var ownerWindow = ownerDocument.defaultView || resolvedWindow || window;"
                                                                              "try {"
-                                                                                 "var Constructor = window[constructorName];"
+                                                                                 "var Constructor = ownerWindow[constructorName];"
                                                                                  "if (Constructor) {"
-                                                                                     "var event = new Constructor(type, { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y, screenX: x, screenY: y, button: 0, buttons: 1, pointerType: 'mouse' });"
+                                                                                     "var options = { bubbles: bubbles, cancelable: true, composed: true, view: ownerWindow, detail: 1, clientX: resolvedClientX, clientY: resolvedClientY, screenX: resolvedClientX, screenY: resolvedClientY, button: 0, buttons: buttons };"
+                                                                                     "if (constructorName === 'PointerEvent') {"
+                                                                                         "options.pointerId = 1;"
+                                                                                         "options.pointerType = 'mouse';"
+                                                                                         "options.isPrimary = true;"
+                                                                                         "options.width = 1;"
+                                                                                         "options.height = 1;"
+                                                                                         "options.pressure = buttons ? 0.5 : 0;"
+                                                                                     "}"
+                                                                                     "var event = new Constructor(type, options);"
                                                                                      "return target.dispatchEvent(event);"
                                                                                  "}"
                                                                              "} catch (error) {}"
-                                                                             "var mouseEvent = document.createEvent('MouseEvents');"
-                                                                             "mouseEvent.initMouseEvent(type, true, true, window, 1, x, y, x, y, false, false, false, false, 0, null);"
+                                                                             "var mouseEvent = ownerDocument.createEvent('MouseEvents');"
+                                                                             "mouseEvent.initMouseEvent(type, bubbles, true, ownerWindow, 1, resolvedClientX, resolvedClientY, resolvedClientX, resolvedClientY, false, false, false, false, 0, null);"
                                                                              "return target.dispatchEvent(mouseEvent);"
                                                                          "}"
-                                                                         "dispatchPointerLikeEvent('pointerdown', 'PointerEvent');"
-                                                                         "dispatchPointerLikeEvent('mousedown', 'MouseEvent');"
-                                                                         "dispatchPointerLikeEvent('pointerup', 'PointerEvent');"
-                                                                         "dispatchPointerLikeEvent('mouseup', 'MouseEvent');"
-                                                                         "if (typeof target.click === 'function') { target.click(); }"
-                                                                         "else { dispatchPointerLikeEvent('click', 'MouseEvent'); }"
+                                                                         "dispatchPointerLikeEvent(hitTarget, 'pointerover', 'PointerEvent', 0, true);"
+                                                                         "dispatchPointerLikeEvent(hitTarget, 'mouseover', 'MouseEvent', 0, true);"
+                                                                         "dispatchPointerLikeEvent(hitTarget, 'pointerenter', 'PointerEvent', 0, false);"
+                                                                         "dispatchPointerLikeEvent(hitTarget, 'mouseenter', 'MouseEvent', 0, false);"
+                                                                         "dispatchPointerLikeEvent(hitTarget, 'pointerdown', 'PointerEvent', 1, true);"
+                                                                         "dispatchPointerLikeEvent(hitTarget, 'mousedown', 'MouseEvent', 1, true);"
+                                                                         "dispatchPointerLikeEvent(hitTarget, 'pointerup', 'PointerEvent', 0, true);"
+                                                                         "dispatchPointerLikeEvent(hitTarget, 'mouseup', 'MouseEvent', 0, true);"
+                                                                         "if (typeof actionTarget.click === 'function') { actionTarget.click(); }"
+                                                                         "else { dispatchPointerLikeEvent(hitTarget, 'click', 'MouseEvent', 0, true); }"
                                                                          "return 'true';"];
     fieldType = fieldType.lowercaseString;
     if ([fieldType isEqualToString:@"date"] ||

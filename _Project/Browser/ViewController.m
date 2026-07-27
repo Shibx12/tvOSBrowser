@@ -6,8 +6,11 @@
 //  Improved by Jip van Akker on 14/10/2015 through 10/01/2019
 //
 
-#import "BrowserMenuCoordinator.h"
+#import "BrowserAddressInterpreter.h"
+#import "BrowserChromeViewController.h"
 #import "BrowserDOMInteractionService.h"
+#import "BrowserFavoritesHomeViewController.h"
+#import "BrowserMenuCoordinator.h"
 #import "BrowserNavigationService.h"
 #import "BrowserPageActionCoordinator.h"
 #import "BrowserPreferencesStore.h"
@@ -15,7 +18,6 @@
 #import "BrowserSessionStore.h"
 #import "BrowserTabViewModel.h"
 #import "BrowserTabCoordinator.h"
-#import "BrowserTabOverviewController.h"
 #import "BrowserVideoPlaybackCoordinator.h"
 #import "BrowserViewModel.h"
 #import "ViewController.h"
@@ -30,9 +32,12 @@ static UIColor *kTextColor(void) {
     }
 }
 
-@interface ViewController () <BrowserMenuCoordinatorHost, BrowserPageActionCoordinatorHost, BrowserRemoteInputControllerHost, BrowserTabCoordinatorHost, BrowserTabOverviewControllerHost, BrowserTopBarViewDelegate, BrowserVideoPlaybackCoordinatorHost>
+@interface ViewController () <BrowserChromeViewControllerDelegate, BrowserFavoritesHomeViewControllerDelegate, BrowserMenuCoordinatorHost, BrowserPageActionCoordinatorHost, BrowserRemoteInputControllerHost, BrowserTabCoordinatorHost, BrowserVideoPlaybackCoordinatorHost>
 
+@property (nonatomic) BrowserAddressInterpreter *addressInterpreter;
+@property (nonatomic) BrowserChromeViewController *chromeViewController;
 @property (nonatomic) BrowserDOMInteractionService *domInteractionService;
+@property (nonatomic) BrowserFavoritesHomeViewController *favoritesHomeViewController;
 @property (nonatomic) BrowserMenuCoordinator *menuCoordinator;
 @property (nonatomic) BrowserNavigationService *navigationService;
 @property (nonatomic) BrowserPageActionCoordinator *pageActionCoordinator;
@@ -40,12 +45,15 @@ static UIColor *kTextColor(void) {
 @property (nonatomic) BrowserRemoteInputController *remoteInputController;
 @property (nonatomic) BrowserSessionStore *sessionStore;
 @property (nonatomic) BrowserTabCoordinator *tabCoordinator;
-@property (nonatomic) BrowserTabOverviewController *tabOverviewController;
 @property (nonatomic) BrowserVideoPlaybackCoordinator *videoPlaybackCoordinator;
 @property (nonatomic) BrowserViewModel *viewModel;
 @property (nonatomic) BOOL displayedHintsOnLaunch;
 @property (nonatomic) BOOL scrollViewAllowBounces;
 @property (nonatomic, getter=isTopBarFocusActive) BOOL topBarFocusActive;
+@property (nonatomic) CGFloat chromeScrollAccumulator;
+@property (nonatomic, getter=isPageZoomed) BOOL pageZoomed;
+@property (nonatomic, weak) BrowserWebView *zoomedWebView;
+@property (nonatomic) BOOL browserContainerClipsBeforeZoom;
 
 @end
 
@@ -62,10 +70,11 @@ static UIColor *kTextColor(void) {
     [self.preferencesStore ensureUserAgentConsistency];
 
     self.viewModel = [BrowserViewModel new];
-    self.viewModel.topNavigationBarVisible = self.preferencesStore.topNavigationBarVisible;
     self.viewModel.textFontSize = self.preferencesStore.textFontSize;
     self.viewModel.fullscreenVideoPlaybackEnabled = self.preferencesStore.fullscreenVideoPlaybackEnabled;
 
+    self.addressInterpreter = [BrowserAddressInterpreter new];
+    [self installBrowserChrome];
     self.domInteractionService = [BrowserDOMInteractionService new];
     self.navigationService = [[BrowserNavigationService alloc] initWithPreferencesStore:self.preferencesStore];
     self.sessionStore = [BrowserSessionStore new];
@@ -81,23 +90,17 @@ static UIColor *kTextColor(void) {
                                                           sessionStore:self.sessionStore
                                                     browserContainerView:self.browserContainerView
                                                               rootView:self.view
-                                                            topMenuView:self.topMenuView
                                                             cursorView:self.remoteInputController.cursorView
                                                manualScrollPanRecognizer:self.remoteInputController.manualScrollPanRecognizer
                                                            webViewDelegate:self
                                                        scrollViewAllowBounces:self.scrollViewAllowBounces];
-    self.tabOverviewController = [[BrowserTabOverviewController alloc] initWithHost:self
-                                                                            viewModel:self.viewModel
-                                                                             rootView:self.view
-                                                                           topMenuView:self.topMenuView
-                                                                           cursorView:self.remoteInputController.cursorView];
     self.pageActionCoordinator = [[BrowserPageActionCoordinator alloc] initWithHost:self
                                                                domInteractionService:self.domInteractionService
                                                                    navigationService:self.navigationService
                                                             videoPlaybackCoordinator:self.videoPlaybackCoordinator];
+    [self installFavoritesHome];
 
-    self.topMenuView.delegate = self;
-    self.topMenuView.loadingSpinner.hidesWhenStopped = YES;
+    [self.chromeViewController setChromeVisible:YES];
     self.remoteInputController.cursorView.hidden = NO;
 
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -118,6 +121,7 @@ static UIColor *kTextColor(void) {
                                                object:nil];
 
     [self.tabCoordinator restoreInitialStateOrCreateFirstTab];
+    [self refreshBrowserChrome];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -161,6 +165,77 @@ static UIColor *kTextColor(void) {
 
 #pragma mark - Helpers
 
+- (void)installBrowserChrome {
+    BrowserChromeViewController *chromeViewController =
+        [[BrowserChromeViewController alloc] initWithViewModel:self.viewModel];
+    chromeViewController.delegate = self;
+    [self addChildViewController:chromeViewController];
+    chromeViewController.view.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:chromeViewController.view];
+    [NSLayoutConstraint activateConstraints:@[
+        [chromeViewController.view.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:80.0],
+        [chromeViewController.view.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-80.0],
+        [chromeViewController.view.topAnchor constraintEqualToAnchor:self.view.topAnchor constant:32.0],
+        [chromeViewController.view.heightAnchor constraintEqualToConstant:88.0],
+    ]];
+    [chromeViewController didMoveToParentViewController:self];
+    self.chromeViewController = chromeViewController;
+}
+
+- (void)installFavoritesHome {
+    BrowserFavoritesHomeViewController *viewController = [BrowserFavoritesHomeViewController new];
+    viewController.delegate = self;
+    [self addChildViewController:viewController];
+    viewController.view.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.browserContainerView addSubview:viewController.view];
+    [NSLayoutConstraint activateConstraints:@[
+        [viewController.view.leadingAnchor constraintEqualToAnchor:self.browserContainerView.leadingAnchor],
+        [viewController.view.trailingAnchor constraintEqualToAnchor:self.browserContainerView.trailingAnchor],
+        [viewController.view.topAnchor constraintEqualToAnchor:self.browserContainerView.topAnchor],
+        [viewController.view.bottomAnchor constraintEqualToAnchor:self.browserContainerView.bottomAnchor],
+    ]];
+    [viewController didMoveToParentViewController:self];
+    viewController.view.hidden = YES;
+    self.favoritesHomeViewController = viewController;
+}
+
+- (BOOL)isFavoritesHomeVisible {
+    return self.favoritesHomeViewController != nil &&
+        !self.favoritesHomeViewController.view.hidden;
+}
+
+- (void)updateFavoritesHomeVisibility {
+    BOOL shouldShowHome = self.tabCoordinator.activeTab.showsFavoritesHome;
+    self.favoritesHomeViewController.view.hidden = !shouldShowHome;
+    self.webview.hidden = shouldShowHome;
+    if (shouldShowHome) {
+        [self.favoritesHomeViewController reloadFavorites];
+        [self.browserContainerView bringSubviewToFront:self.favoritesHomeViewController.view];
+        [self.chromeViewController setChromeAutoHidden:NO animated:YES];
+    } else {
+        [self.favoritesHomeViewController clearPointerHover];
+    }
+    [self.remoteInputController refreshInteractionState];
+    [self.view bringSubviewToFront:self.chromeViewController.view];
+    [self.view bringSubviewToFront:self.remoteInputController.cursorView];
+}
+
+- (void)refreshBrowserChrome {
+    BrowserTabViewModel *tab = self.tabCoordinator.activeTab ?: self.viewModel.activeTab;
+    BrowserWebView *webView = self.webview;
+    NSString *title = tab.title.length > 0 ? tab.title : webView.title;
+    NSString *URLString = tab.URLString.length > 0
+        ? tab.URLString
+        : webView.request.URL.absoluteString;
+    BOOL loading = tab.isLoading || webView.isLoading;
+    [self.chromeViewController updateWithTitle:title
+                                     URLString:URLString
+                                       loading:loading
+                                     canGoBack:webView.canGoBack
+                                  canGoForward:webView.canGoForward];
+    [self updateFavoritesHomeVisibility];
+}
+
 - (BrowserWebView *)webview {
     return self.tabCoordinator.activeWebView;
 }
@@ -172,7 +247,81 @@ static UIColor *kTextColor(void) {
 }
 
 - (void)loadHomePage {
+    [self setPageZoomed:NO animated:YES];
     [self.tabCoordinator loadHomePage];
+}
+
+- (CGAffineTransform)pageZoomTransformForCursorPoint:(CGPoint)cursorPoint {
+    CGRect viewportBounds = self.browserContainerView.bounds;
+    CGFloat viewportWidth = MAX(CGRectGetWidth(viewportBounds), 1.0);
+    CGFloat viewportHeight = MAX(CGRectGetHeight(viewportBounds), 1.0);
+    CGPoint point = [self.browserContainerView convertPoint:cursorPoint fromView:self.view];
+    CGFloat normalizedX = MIN(MAX((point.x - CGRectGetMinX(viewportBounds)) / viewportWidth, 0.0), 1.0);
+    CGFloat normalizedY = MIN(MAX((point.y - CGRectGetMinY(viewportBounds)) / viewportHeight, 0.0), 1.0);
+
+    CGAffineTransform transform = CGAffineTransformMakeScale(2.0, 2.0);
+    transform.tx = (0.5 - normalizedX) * viewportWidth;
+    transform.ty = (0.5 - normalizedY) * viewportHeight;
+    return transform;
+}
+
+- (void)setPageZoomed:(BOOL)pageZoomed animated:(BOOL)animated {
+    if (_pageZoomed == pageZoomed) {
+        return;
+    }
+
+    BrowserWebView *webView = pageZoomed ? self.webview : self.zoomedWebView;
+    if (webView == nil || (pageZoomed && [self isFavoritesHomeVisible])) {
+        return;
+    }
+
+    _pageZoomed = pageZoomed;
+    if (pageZoomed) {
+        self.zoomedWebView = webView;
+        self.browserContainerClipsBeforeZoom = self.browserContainerView.clipsToBounds;
+        self.browserContainerView.clipsToBounds = YES;
+    }
+
+    CGPoint cursorPoint = self.remoteInputController.cursorView.frame.origin;
+    CGAffineTransform targetTransform = pageZoomed
+        ? [self pageZoomTransformForCursorPoint:cursorPoint]
+        : CGAffineTransformIdentity;
+    void (^changes)(void) = ^{
+        webView.transform = targetTransform;
+    };
+    void (^completion)(BOOL) = ^(BOOL finished) {
+        (void)finished;
+        if (!pageZoomed) {
+            self.browserContainerView.clipsToBounds = self.browserContainerClipsBeforeZoom;
+            self.zoomedWebView = nil;
+        }
+    };
+
+    if (!animated || UIAccessibilityIsReduceMotionEnabled()) {
+        changes();
+        completion(YES);
+    } else {
+        [UIView animateWithDuration:0.26
+                              delay:0.0
+                            options:UIViewAnimationOptionBeginFromCurrentState |
+                                    UIViewAnimationOptionCurveEaseInOut
+                         animations:changes
+                         completion:completion];
+    }
+    [self.view bringSubviewToFront:self.chromeViewController.view];
+    [self.view bringSubviewToFront:self.remoteInputController.cursorView];
+}
+
+- (void)updatePageZoomForCursorPoint:(CGPoint)cursorPoint {
+    if (!self.pageZoomed || self.zoomedWebView == nil) {
+        return;
+    }
+    if (self.chromeViewController.isChromeVisible &&
+        !self.chromeViewController.isChromeAutoHidden &&
+        CGRectContainsPoint(self.chromeViewController.view.frame, cursorPoint)) {
+        return;
+    }
+    self.zoomedWebView.transform = [self pageZoomTransformForCursorPoint:cursorPoint];
 }
 
 - (void)showAdvancedMenu {
@@ -182,9 +331,7 @@ static UIColor *kTextColor(void) {
 
 - (BOOL)canActivateTopBarFocusMode {
     return self.presentedViewController == nil &&
-        !self.tabOverviewController.visible &&
-        self.viewModel.topNavigationBarVisible &&
-        !self.topMenuView.hidden;
+        self.chromeViewController.isChromeVisible;
 }
 
 - (void)activateTopBarFocusMode {
@@ -196,7 +343,7 @@ static UIColor *kTextColor(void) {
     }
 
     self.topBarFocusActive = YES;
-    [self.topMenuView setFocusModeActive:YES];
+    [self.chromeViewController setFocusModeActive:YES];
     [self.remoteInputController refreshInteractionState];
     [self setNeedsFocusUpdate];
     [self updateFocusIfNeeded];
@@ -208,55 +355,87 @@ static UIColor *kTextColor(void) {
     }
 
     self.topBarFocusActive = NO;
-    [self.topMenuView setFocusModeActive:NO];
+    [self.chromeViewController setFocusModeActive:NO];
     [self.remoteInputController refreshInteractionState];
     [self setNeedsFocusUpdate];
     [self updateFocusIfNeeded];
 }
 
-- (void)performTopBarAction:(BrowserTopBarAction)action {
+- (void)updateChromeAutoHideForScrollDeltaY:(CGFloat)deltaY
+                              contentOffsetY:(CGFloat)contentOffsetY {
+    if ([self isFavoritesHomeVisible]) {
+        return;
+    }
+    if (!self.chromeViewController.isChromeVisible) {
+        self.chromeScrollAccumulator = 0.0;
+        return;
+    }
+
+    if (contentOffsetY <= 12.0) {
+        self.chromeScrollAccumulator = 0.0;
+        [self.chromeViewController setChromeAutoHidden:NO animated:YES];
+        return;
+    }
+
+    if ((deltaY > 0.0 && self.chromeScrollAccumulator < 0.0) ||
+        (deltaY < 0.0 && self.chromeScrollAccumulator > 0.0)) {
+        self.chromeScrollAccumulator = 0.0;
+    }
+    self.chromeScrollAccumulator += deltaY;
+
+    if (self.chromeScrollAccumulator >= 28.0) {
+        self.chromeScrollAccumulator = 0.0;
+        [self deactivateTopBarFocusMode];
+        [self.chromeViewController setChromeAutoHidden:YES animated:YES];
+    } else if (self.chromeScrollAccumulator <= -22.0) {
+        self.chromeScrollAccumulator = 0.0;
+        [self.chromeViewController setChromeAutoHidden:NO animated:YES];
+    }
+}
+
+- (void)toggleBrowserChromeForMenuPress {
+    self.chromeScrollAccumulator = 0.0;
+    if (self.chromeViewController.isChromeAutoHidden) {
+        [self.chromeViewController setChromeAutoHidden:NO animated:YES];
+        [self.remoteInputController setCursorModeEnabled:YES];
+        return;
+    }
+    if (!self.chromeViewController.isChromeVisible) {
+        [self.chromeViewController setChromeVisible:YES];
+        [self.chromeViewController setChromeAutoHidden:YES animated:NO];
+        [self.chromeViewController setChromeAutoHidden:NO animated:YES];
+        [self.remoteInputController setCursorModeEnabled:YES];
+        return;
+    }
+    [self deactivateTopBarFocusMode];
+    [self.chromeViewController setChromeAutoHidden:YES animated:YES];
+}
+
+- (void)performChromeAction:(BrowserChromeAction)action {
     [self deactivateTopBarFocusMode];
 
     switch (action) {
-        case BrowserTopBarActionBack:
+        case BrowserChromeActionBack:
             if (self.webview.canGoBack) {
                 [self.webview goBack];
             }
             break;
-        case BrowserTopBarActionRefresh:
+        case BrowserChromeActionReload:
             [self.webview reload];
             break;
-        case BrowserTopBarActionForward:
+        case BrowserChromeActionForward:
             if (self.webview.canGoForward) {
                 [self.webview goForward];
             }
             break;
-        case BrowserTopBarActionHome:
+        case BrowserChromeActionHome:
             [self loadHomePage];
             break;
-        case BrowserTopBarActionTabs:
-            [self browserShowTabOverview];
+        case BrowserChromeActionNewTab:
+            [self setPageZoomed:NO animated:YES];
+            [self.tabCoordinator createNewTabLoadingHomePage:YES];
             break;
-        case BrowserTopBarActionURL:
-            [self showInputURLorSearchGoogle];
-            break;
-        case BrowserTopBarActionFullscreen:
-            if (self.viewModel.topNavigationBarVisible) {
-                UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Hide Top Navigation bar?"
-                                                                                         message:@"You can still open the side menu by double-tapping the Play/Pause button."
-                                                                                  preferredStyle:UIAlertControllerStyleAlert];
-                [alertController addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-                [alertController addAction:[UIAlertAction actionWithTitle:@"Hide Bar"
-                                                                    style:UIAlertActionStyleDestructive
-                                                                  handler:^(__unused UIAlertAction *action) {
-                    [self browserHideTopNav];
-                }]];
-                [self browserPresentViewController:alertController];
-            } else {
-                [self browserShowTopNav];
-            }
-            break;
-        case BrowserTopBarActionMenu:
+        case BrowserChromeActionMenu:
             [self showAdvancedMenu];
             break;
     }
@@ -388,7 +567,8 @@ static UIColor *kTextColor(void) {
 
 - (void)showHintsAlert {
     UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Usage Guide"
-                                                                             message:@"Double press the touch area to switch between cursor & scroll mode.\nPress the touch area while in cursor mode to click.\nSingle tap to Menu button to Go Back, or Exit on root page.\nSingle tap the Play/Pause button to: Go Forward, Enter URL or Reload Page.\nDouble tap the Play/Pause to show the Advanced Menu with more options.\nUse the tabs icon in the top bar to open the tab overview."
+                                                                             message:@"Press the touch area once to click.\nDouble press to switch between cursor and scroll mode.\nTriple press to toggle 200% page zoom; move the cursor to inspect all directions.\nPress Menu to show or hide the browser controls.\nSingle tap the Play/Pause button to enter a URL or search.\nDouble tap the Play/Pause to show the Advanced Menu with more options.\nUse the × button on a tab to close it."
+                                                                                     @"\nLong-press a Favorite to edit its name or URL, or delete it."
                                                                       preferredStyle:UIAlertControllerStyleAlert];
 
     __weak typeof(self) weakSelf = self;
@@ -416,9 +596,23 @@ static UIColor *kTextColor(void) {
         return;
     }
 
-    CGPoint point = [self.view convertPoint:self.remoteInputController.cursorView.frame.origin toView:self.webview];
+    CGPoint cursorPoint = self.remoteInputController.cursorView.frame.origin;
+    if (self.chromeViewController.isChromeVisible &&
+        CGRectContainsPoint(self.chromeViewController.view.frame, cursorPoint)) {
+        CGPoint chromePoint = [self.chromeViewController.view convertPoint:cursorPoint fromView:self.view];
+        [self.chromeViewController handlePrimaryActionAtPoint:chromePoint];
+        return;
+    }
+
+    if ([self isFavoritesHomeVisible]) {
+        CGPoint homePoint =
+            [self.favoritesHomeViewController.view convertPoint:cursorPoint fromView:self.view];
+        [self.favoritesHomeViewController handlePrimaryActionAtPoint:homePoint];
+        return;
+    }
+
+    CGPoint point = [self.view convertPoint:cursorPoint toView:self.webview];
     if (point.y < 0) {
-        [self activateTopBarFocusMode];
         return;
     }
 
@@ -428,7 +622,7 @@ static UIColor *kTextColor(void) {
 
 - (NSArray<id<UIFocusEnvironment>> *)preferredFocusEnvironments {
     if (self.topBarFocusActive) {
-        UIView *preferredFocusItem = [self.topMenuView preferredFocusItem];
+        UIView *preferredFocusItem = [self.chromeViewController preferredFocusItem];
         if (preferredFocusItem != nil) {
             return @[preferredFocusItem];
         }
@@ -436,10 +630,288 @@ static UIColor *kTextColor(void) {
     return [super preferredFocusEnvironments];
 }
 
-#pragma mark - BrowserTopBarViewDelegate
+#pragma mark - BrowserChromeViewControllerDelegate
 
-- (void)browserTopBarView:(__unused BrowserTopBarView *)topBarView didTriggerAction:(BrowserTopBarAction)action {
-    [self performTopBarAction:action];
+- (void)browserChromeViewController:(BrowserChromeViewController *)viewController
+                   didTriggerAction:(BrowserChromeAction)action {
+    (void)viewController;
+    [self performChromeAction:action];
+}
+
+#pragma mark - BrowserFavoritesHomeViewControllerDelegate
+
+- (void)browserFavoritesHomeViewController:(BrowserFavoritesHomeViewController *)viewController
+                        didSelectURLString:(NSString *)URLString {
+    (void)viewController;
+    NSURLRequest *request = [self.navigationService requestForURLString:URLString];
+    if (request == nil) {
+        return;
+    }
+    self.tabCoordinator.activeTab.showsFavoritesHome = NO;
+    [self refreshBrowserChrome];
+    [self.webview loadRequest:request];
+}
+
+- (void)browserFavoritesHomeViewControllerDidRequestAddFavorite:
+    (BrowserFavoritesHomeViewController *)viewController {
+    (void)viewController;
+    UIAlertController *alertController =
+        [UIAlertController alertControllerWithTitle:@"Add Website"
+                                            message:@"Add a website to your Favorites home screen."
+                                     preferredStyle:UIAlertControllerStyleAlert];
+    [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+        textField.placeholder = @"Website name";
+        textField.keyboardType = UIKeyboardTypeDefault;
+    }];
+    [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+        textField.placeholder = @"https://example.com";
+        textField.keyboardType = UIKeyboardTypeURL;
+    }];
+
+    __weak typeof(self) weakSelf = self;
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Cancel"
+                                                        style:UIAlertActionStyleCancel
+                                                      handler:nil]];
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Add"
+                                                        style:UIAlertActionStyleDefault
+                                                      handler:^(__unused UIAlertAction *action) {
+        NSString *name = [weakSelf.addressInterpreter trimmedInput:alertController.textFields.firstObject.text];
+        NSString *enteredURL = [weakSelf.addressInterpreter trimmedInput:alertController.textFields.lastObject.text];
+        NSString *URLString = [weakSelf.addressInterpreter normalizedURLStringForInput:enteredURL];
+        if (URLString.length == 0) {
+            return;
+        }
+        if (name.length == 0) {
+            name = [NSURL URLWithString:URLString].host ?: URLString;
+        }
+        NSMutableArray *favorites =
+            [[NSUserDefaults.standardUserDefaults arrayForKey:@"FAVORITES"] mutableCopy] ?:
+            [NSMutableArray array];
+        [favorites addObject:@[URLString, name]];
+        [NSUserDefaults.standardUserDefaults setObject:favorites forKey:@"FAVORITES"];
+        [NSUserDefaults.standardUserDefaults synchronize];
+        [NSNotificationCenter.defaultCenter postNotificationName:@"BrowserFavoritesDidChangeNotification"
+                                                          object:nil];
+        [weakSelf.favoritesHomeViewController reloadFavorites];
+    }]];
+    [self presentViewController:alertController animated:YES completion:nil];
+}
+
+- (NSInteger)favoriteIndexForExpectedIndex:(NSUInteger)expectedIndex
+                                     title:(NSString *)title
+                                 URLString:(NSString *)URLString
+                                 favorites:(NSArray *)favorites {
+    if (expectedIndex < favorites.count) {
+        NSArray *entry = [favorites[expectedIndex] isKindOfClass:NSArray.class]
+            ? favorites[expectedIndex]
+            : nil;
+        NSString *entryURL = entry.count > 0 && [entry[0] isKindOfClass:NSString.class] ? entry[0] : @"";
+        NSString *entryTitle = entry.count > 1 && [entry[1] isKindOfClass:NSString.class] ? entry[1] : @"";
+        if ([entryURL isEqualToString:URLString] && [entryTitle isEqualToString:title]) {
+            return (NSInteger)expectedIndex;
+        }
+    }
+
+    for (NSUInteger index = 0; index < favorites.count; index++) {
+        NSArray *entry = [favorites[index] isKindOfClass:NSArray.class] ? favorites[index] : nil;
+        NSString *entryURL = entry.count > 0 && [entry[0] isKindOfClass:NSString.class] ? entry[0] : @"";
+        NSString *entryTitle = entry.count > 1 && [entry[1] isKindOfClass:NSString.class] ? entry[1] : @"";
+        if ([entryURL isEqualToString:URLString] && [entryTitle isEqualToString:title]) {
+            return (NSInteger)index;
+        }
+    }
+    return NSNotFound;
+}
+
+- (void)saveFavorites:(NSArray *)favorites {
+    [NSUserDefaults.standardUserDefaults setObject:favorites forKey:@"FAVORITES"];
+    [NSUserDefaults.standardUserDefaults synchronize];
+    [NSNotificationCenter.defaultCenter postNotificationName:@"BrowserFavoritesDidChangeNotification"
+                                                      object:nil];
+}
+
+- (void)presentFavoriteNameEditorAtIndex:(NSUInteger)expectedIndex
+                                   title:(NSString *)title
+                               URLString:(NSString *)URLString {
+    UIAlertController *alertController =
+        [UIAlertController alertControllerWithTitle:@"Edit Name"
+                                            message:URLString
+                                     preferredStyle:UIAlertControllerStyleAlert];
+    [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+        textField.text = title;
+        textField.placeholder = @"Website name";
+        textField.keyboardType = UIKeyboardTypeDefault;
+    }];
+
+    __weak typeof(self) weakSelf = self;
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Cancel"
+                                                        style:UIAlertActionStyleCancel
+                                                      handler:nil]];
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Save"
+                                                        style:UIAlertActionStyleDefault
+                                                      handler:^(__unused UIAlertAction *action) {
+        NSMutableArray *favorites =
+            [[NSUserDefaults.standardUserDefaults arrayForKey:@"FAVORITES"] mutableCopy] ?:
+            [NSMutableArray array];
+        NSInteger index = [weakSelf favoriteIndexForExpectedIndex:expectedIndex
+                                                            title:title
+                                                        URLString:URLString
+                                                        favorites:favorites];
+        if (index == NSNotFound) {
+            return;
+        }
+        NSString *updatedTitle =
+            [weakSelf.addressInterpreter trimmedInput:alertController.textFields.firstObject.text];
+        if (updatedTitle.length == 0) {
+            updatedTitle = [NSURL URLWithString:URLString].host ?: URLString;
+        }
+        favorites[(NSUInteger)index] = @[URLString, updatedTitle];
+        [weakSelf saveFavorites:favorites];
+    }]];
+    [self presentViewController:alertController animated:YES completion:nil];
+}
+
+- (void)presentFavoriteURLEditorAtIndex:(NSUInteger)expectedIndex
+                                  title:(NSString *)title
+                              URLString:(NSString *)URLString {
+    UIAlertController *alertController =
+        [UIAlertController alertControllerWithTitle:@"Edit URL"
+                                            message:title
+                                     preferredStyle:UIAlertControllerStyleAlert];
+    [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+        textField.text = URLString;
+        textField.placeholder = @"https://example.com";
+        textField.keyboardType = UIKeyboardTypeURL;
+    }];
+
+    __weak typeof(self) weakSelf = self;
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Cancel"
+                                                        style:UIAlertActionStyleCancel
+                                                      handler:nil]];
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Save"
+                                                        style:UIAlertActionStyleDefault
+                                                      handler:^(__unused UIAlertAction *action) {
+        NSString *enteredURL =
+            [weakSelf.addressInterpreter trimmedInput:alertController.textFields.firstObject.text];
+        NSString *updatedURL =
+            [weakSelf.addressInterpreter normalizedURLStringForInput:enteredURL];
+        if (updatedURL.length == 0) {
+            return;
+        }
+        NSMutableArray *favorites =
+            [[NSUserDefaults.standardUserDefaults arrayForKey:@"FAVORITES"] mutableCopy] ?:
+            [NSMutableArray array];
+        NSInteger index = [weakSelf favoriteIndexForExpectedIndex:expectedIndex
+                                                            title:title
+                                                        URLString:URLString
+                                                        favorites:favorites];
+        if (index == NSNotFound) {
+            return;
+        }
+        favorites[(NSUInteger)index] = @[updatedURL, title];
+        [weakSelf saveFavorites:favorites];
+    }]];
+    [self presentViewController:alertController animated:YES completion:nil];
+}
+
+- (void)browserFavoritesHomeViewController:(BrowserFavoritesHomeViewController *)viewController
+       didRequestActionsForFavoriteAtIndex:(NSUInteger)index
+                                     title:(NSString *)title
+                                 URLString:(NSString *)URLString {
+    (void)viewController;
+    NSString *displayTitle = title.length > 0 ? title : URLString;
+    UIAlertController *alertController =
+        [UIAlertController alertControllerWithTitle:displayTitle
+                                            message:URLString
+                                     preferredStyle:UIAlertControllerStyleAlert];
+    __weak typeof(self) weakSelf = self;
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Edit Name"
+                                                        style:UIAlertActionStyleDefault
+                                                      handler:^(__unused UIAlertAction *action) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.20 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [weakSelf presentFavoriteNameEditorAtIndex:index
+                                                 title:title
+                                             URLString:URLString];
+        });
+    }]];
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Edit URL"
+                                                        style:UIAlertActionStyleDefault
+                                                      handler:^(__unused UIAlertAction *action) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.20 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [weakSelf presentFavoriteURLEditorAtIndex:index
+                                                title:title
+                                            URLString:URLString];
+        });
+    }]];
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Delete"
+                                                        style:UIAlertActionStyleDestructive
+                                                      handler:^(__unused UIAlertAction *action) {
+        NSMutableArray *favorites =
+            [[NSUserDefaults.standardUserDefaults arrayForKey:@"FAVORITES"] mutableCopy] ?:
+            [NSMutableArray array];
+        NSInteger resolvedIndex = [weakSelf favoriteIndexForExpectedIndex:index
+                                                                     title:title
+                                                                 URLString:URLString
+                                                                 favorites:favorites];
+        if (resolvedIndex == NSNotFound) {
+            return;
+        }
+        [favorites removeObjectAtIndex:(NSUInteger)resolvedIndex];
+        [weakSelf saveFavorites:favorites];
+    }]];
+    [alertController addAction:[UIAlertAction actionWithTitle:@"Cancel"
+                                                        style:UIAlertActionStyleCancel
+                                                      handler:nil]];
+    [self presentViewController:alertController animated:YES completion:nil];
+}
+
+- (void)browserChromeViewController:(BrowserChromeViewController *)viewController
+                didSelectTabAtIndex:(NSInteger)tabIndex {
+    (void)viewController;
+    [self setPageZoomed:NO animated:YES];
+    [self.tabCoordinator switchToTabAtIndex:tabIndex];
+    [self refreshBrowserChrome];
+}
+
+- (void)browserChromeViewController:(BrowserChromeViewController *)viewController
+           didRequestCloseTabAtIndex:(NSInteger)tabIndex {
+    (void)viewController;
+    if (tabIndex == self.viewModel.activeTabIndex) {
+        [self setPageZoomed:NO animated:YES];
+    }
+    [self.tabCoordinator closeTabAtIndex:tabIndex];
+    [self refreshBrowserChrome];
+    [self setNeedsFocusUpdate];
+    [self updateFocusIfNeeded];
+}
+
+- (void)browserChromeViewControllerDidRequestAddressInput:(BrowserChromeViewController *)viewController {
+    (void)viewController;
+    [self deactivateTopBarFocusMode];
+    [self requestURLorSearchInput];
+}
+
+- (void)browserChromeViewController:(BrowserChromeViewController *)viewController
+             didSubmitAddressString:(NSString *)addressString {
+    (void)viewController;
+    NSString *trimmedInput = [self.addressInterpreter trimmedInput:addressString];
+    if (trimmedInput.length == 0) {
+        return;
+    }
+
+    NSURLRequest *request = nil;
+    NSString *URLString = [self.addressInterpreter normalizedURLStringForInput:trimmedInput];
+    if (URLString.length > 0) {
+        request = [self.navigationService requestForURLString:URLString];
+    } else {
+        request = [self.navigationService googleSearchRequestForQuery:trimmedInput];
+    }
+    if (request != nil) {
+        [self setPageZoomed:NO animated:YES];
+        [self.webview loadRequest:request];
+    }
 }
 
 #pragma mark - BrowserMenuCoordinatorHost
@@ -465,10 +937,6 @@ static UIColor *kTextColor(void) {
     self.preferencesStore.textFontSize = self.viewModel.textFontSize;
 }
 
-- (BOOL)browserTopMenuShowing {
-    return self.viewModel.topNavigationBarVisible;
-}
-
 - (BOOL)browserFullscreenVideoPlaybackEnabled {
     return self.viewModel.fullscreenVideoPlaybackEnabled;
 }
@@ -491,27 +959,8 @@ static UIColor *kTextColor(void) {
     [self showHintsAlert];
 }
 
-- (void)browserShowTabOverview {
-    [self deactivateTopBarFocusMode];
-    [self.tabCoordinator prepareTabOverviewThumbnails];
-    [self.tabOverviewController show];
-}
-
 - (void)browserCreateNewTabLoadingHomePage:(BOOL)loadHomePage {
     [self.tabCoordinator createNewTabLoadingHomePage:loadHomePage];
-}
-
-- (void)browserHideTopNav {
-    [self deactivateTopBarFocusMode];
-    self.viewModel.topNavigationBarVisible = NO;
-    self.preferencesStore.topNavigationBarVisible = NO;
-    [self.tabCoordinator setTopNavigationVisible:NO];
-}
-
-- (void)browserShowTopNav {
-    self.viewModel.topNavigationBarVisible = YES;
-    self.preferencesStore.topNavigationBarVisible = YES;
-    [self.tabCoordinator setTopNavigationVisible:YES];
 }
 
 - (void)browserUpdateTextFontSize {
@@ -562,38 +1011,17 @@ static UIColor *kTextColor(void) {
     [self updateTextFontSize];
 }
 
+- (void)browserTabCoordinatorDidChangeState {
+    [self refreshBrowserChrome];
+}
+
+- (void)browserTabCoordinatorDidScrollByDeltaY:(CGFloat)deltaY
+                                 contentOffsetY:(CGFloat)contentOffsetY {
+    [self updateChromeAutoHideForScrollDeltaY:deltaY contentOffsetY:contentOffsetY];
+}
+
 - (BOOL)browserTabCoordinatorIsCursorModeEnabled {
     return self.remoteInputController.cursorModeEnabled;
-}
-
-- (BOOL)browserTabCoordinatorIsTabOverviewVisible {
-    return self.tabOverviewController.visible;
-}
-
-#pragma mark - BrowserTabOverviewControllerHost
-
-- (BOOL)browserTabOverviewControllerCursorModeEnabled {
-    return self.remoteInputController.cursorModeEnabled;
-}
-
-- (void)browserTabOverviewControllerSetCursorModeEnabled:(BOOL)enabled {
-    [self.remoteInputController setCursorModeEnabled:enabled];
-}
-
-- (void)browserTabOverviewControllerPresentViewController:(UIViewController *)viewController {
-    [self presentViewController:viewController animated:YES completion:nil];
-}
-
-- (void)browserTabOverviewControllerCreateNewTabLoadingHomePage:(BOOL)loadHomePage {
-    [self.tabCoordinator createNewTabLoadingHomePage:loadHomePage];
-}
-
-- (void)browserTabOverviewControllerSwitchToTabAtIndex:(NSInteger)tabIndex {
-    [self.tabCoordinator switchToTabAtIndex:tabIndex];
-}
-
-- (void)browserTabOverviewControllerCloseTabAtIndex:(NSInteger)tabIndex {
-    [self.tabCoordinator closeTabAtIndex:tabIndex];
 }
 
 #pragma mark - BrowserPageActionCoordinatorHost
@@ -609,7 +1037,9 @@ static UIColor *kTextColor(void) {
 #pragma mark - BrowserRemoteInputControllerHost
 
 - (UIScrollView *)browserRemoteInputControllerActiveScrollView {
-    return self.webview.scrollView;
+    return [self isFavoritesHomeVisible]
+        ? self.favoritesHomeViewController.scrollView
+        : self.webview.scrollView;
 }
 
 - (UIViewController *)browserRemoteInputControllerPresentedViewController {
@@ -624,6 +1054,10 @@ static UIColor *kTextColor(void) {
     return [self canActivateTopBarFocusMode];
 }
 
+- (BOOL)browserRemoteInputControllerShouldExitTopBarForDownPress {
+    return [self.chromeViewController shouldExitChromeForDownPress];
+}
+
 - (void)browserRemoteInputControllerActivateTopBarFocus {
     [self activateTopBarFocusMode];
 }
@@ -632,48 +1066,37 @@ static UIColor *kTextColor(void) {
     [self deactivateTopBarFocusMode];
 }
 
-- (BOOL)browserRemoteInputControllerTabOverviewVisible {
-    return self.tabOverviewController.visible;
-}
-
-- (BOOL)browserRemoteInputControllerTabOverviewContainsPoint:(CGPoint)point {
-    return [self.tabOverviewController containsPoint:point];
-}
-
-- (BOOL)browserRemoteInputControllerHandleTabOverviewSelectionAtPoint:(CGPoint)point {
-    return [self.tabOverviewController handleSelectionAtPoint:point];
-}
-
-- (void)browserRemoteInputControllerDismissTabOverview {
-    [self.tabOverviewController dismiss];
-}
-
-- (void)browserRemoteInputControllerHandleTabOverviewAlternateAction {
-    [self.tabOverviewController handleAlternateAction];
-}
-
 - (void)browserRemoteInputControllerHandlePrimaryAction {
     [self browserHandlePrimaryAction];
 }
 
-- (void)browserRemoteInputControllerHandleMenuPress {
-    UIAlertController *alertController = (UIAlertController *)self.presentedViewController;
-    if (alertController != nil) {
-        [self.presentedViewController dismissViewControllerAnimated:YES completion:nil];
-    } else if (self.webview.canGoBack) {
-        [self.webview goBack];
-    } else {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Exit App?"
-                                                                       message:nil
-                                                                preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Exit"
-                                                  style:UIAlertActionStyleDestructive
-                                                handler:^(__unused UIAlertAction *action) {
-            exit(EXIT_SUCCESS);
-        }]];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Dismiss" style:UIAlertActionStyleCancel handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
+- (BOOL)browserRemoteInputControllerHandleLongSelectPress {
+    if (!self.remoteInputController.cursorModeEnabled ||
+        ![self isFavoritesHomeVisible] ||
+        self.presentedViewController != nil) {
+        return NO;
     }
+    CGPoint cursorPoint = self.remoteInputController.cursorView.frame.origin;
+    CGPoint homePoint =
+        [self.favoritesHomeViewController.view convertPoint:cursorPoint fromView:self.view];
+    return [self.favoritesHomeViewController handleLongPressAtPoint:homePoint];
+}
+
+- (void)browserRemoteInputControllerHandleTripleSelectPress {
+    if ([self isFavoritesHomeVisible] || self.presentedViewController != nil) {
+        return;
+    }
+    [self.remoteInputController setCursorModeEnabled:YES];
+    [self setPageZoomed:!self.pageZoomed animated:YES];
+}
+
+- (void)browserRemoteInputControllerHandleMenuPress {
+    UIViewController *presentedViewController = self.presentedViewController;
+    if (presentedViewController != nil) {
+        [self.presentedViewController dismissViewControllerAnimated:YES completion:nil];
+        return;
+    }
+    [self toggleBrowserChromeForMenuPress];
 }
 
 - (void)browserRemoteInputControllerHandlePlayPausePress {
@@ -690,6 +1113,23 @@ static UIColor *kTextColor(void) {
 }
 
 - (NSString *)browserRemoteInputControllerHoverStateAtCursorPoint:(CGPoint)point {
+    if (self.chromeViewController.isChromeVisible &&
+        CGRectContainsPoint(self.chromeViewController.view.frame, point)) {
+        [self.favoritesHomeViewController clearPointerHover];
+        CGPoint chromePoint = [self.chromeViewController.view convertPoint:point fromView:self.view];
+        return [self.chromeViewController containsInteractiveControlAtPoint:chromePoint]
+            ? @"true"
+            : @"false";
+    }
+    if ([self isFavoritesHomeVisible]) {
+        CGPoint homePoint =
+            [self.favoritesHomeViewController.view convertPoint:point fromView:self.view];
+        [self.favoritesHomeViewController updatePointerHoverAtPoint:homePoint];
+        return [self.favoritesHomeViewController containsInteractiveControlAtPoint:homePoint]
+            ? @"true"
+            : @"false";
+    }
+    [self.favoritesHomeViewController clearPointerHover];
     if (self.webview.request == nil) {
         return @"false";
     }
@@ -699,6 +1139,40 @@ static UIColor *kTextColor(void) {
     }
     CGPoint domPoint = [self browserDOMPointForCursor];
     return [self.pageActionCoordinator hoverStateAtDOMPoint:domPoint webView:self.webview];
+}
+
+- (CGPoint)browserRemoteInputControllerSnapPointForCursorPoint:(CGPoint)point {
+    if (self.chromeViewController.isChromeVisible) {
+        CGPoint chromePoint = [self.chromeViewController.view convertPoint:point fromView:self.view];
+        CGPoint chromeMagnetPoint = CGPointZero;
+        if ([self.chromeViewController getMagnetPoint:&chromeMagnetPoint
+                                             forPoint:chromePoint
+                                      maximumDistance:54.0]) {
+            return [self.view convertPoint:chromeMagnetPoint
+                                  fromView:self.chromeViewController.view];
+        }
+    }
+    if ([self isFavoritesHomeVisible]) {
+        CGPoint homePoint =
+            [self.favoritesHomeViewController.view convertPoint:point fromView:self.view];
+        CGPoint homeMagnetPoint = CGPointZero;
+        if ([self.favoritesHomeViewController getMagnetPoint:&homeMagnetPoint
+                                                    forPoint:homePoint
+                                             maximumDistance:105.0]) {
+            return [self.view convertPoint:homeMagnetPoint
+                                  fromView:self.favoritesHomeViewController.view];
+        }
+    }
+    return point;
+}
+
+- (void)browserRemoteInputControllerDidMoveCursorToPoint:(CGPoint)point {
+    [self updatePageZoomForCursorPoint:point];
+}
+
+- (void)browserRemoteInputControllerDidScrollByDeltaY:(CGFloat)deltaY
+                                        contentOffsetY:(CGFloat)contentOffsetY {
+    [self updateChromeAutoHideForScrollDeltaY:deltaY contentOffsetY:contentOffsetY];
 }
 
 - (void)browserRemoteInputControllerSetWebInteractionEnabled:(BOOL)enabled {
@@ -729,20 +1203,6 @@ static UIColor *kTextColor(void) {
 
 - (void)webViewDidFinishLoad:(id)webView {
     [self.tabCoordinator webViewDidFinishLoad:webView];
-    if (self.tabOverviewController.visible) {
-        BrowserTabViewModel *tab = [self.tabCoordinator tabForWebView:webView];
-        NSInteger tabIndex = tab != nil ? [self.viewModel.tabs indexOfObject:tab] : NSNotFound;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (!self.tabOverviewController.visible) {
-                return;
-            }
-            if (tabIndex != NSNotFound) {
-                [self.tabOverviewController updateCardAtIndex:tabIndex];
-            } else {
-                [self.tabOverviewController reload];
-            }
-        });
-    }
 }
 
 - (void)webView:(id)webView didFailLoadWithError:(NSError *)error {
@@ -750,6 +1210,7 @@ static UIColor *kTextColor(void) {
     if (tab == nil) {
         return;
     }
+    [self.tabCoordinator webViewDidFailLoad:webView];
 
     NSURL *failingURL = error.userInfo[NSURLErrorFailingURLErrorKey];
     NSURLRequest *currentRequest = [webView request];
@@ -760,9 +1221,6 @@ static UIColor *kTextColor(void) {
         return;
     }
 
-    if (tab == self.tabCoordinator.activeTab) {
-        [self.topMenuView.loadingSpinner stopAnimating];
-    }
     if (tab != self.tabCoordinator.activeTab) {
         return;
     }
@@ -814,6 +1272,11 @@ static UIColor *kTextColor(void) {
         return;
     }
     [super pressesEnded:presses withEvent:event];
+}
+
+- (void)pressesCancelled:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+    [self.remoteInputController handlePressesCancelled:presses withEvent:event];
+    [super pressesCancelled:presses withEvent:event];
 }
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {

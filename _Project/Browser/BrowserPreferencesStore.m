@@ -2,12 +2,10 @@
 
 static NSString * const kUserAgentDefaultsKey = @"UserAgent";
 static NSString * const kMobileModeDefaultsKey = @"MobileMode";
-static NSString * const kShowTopNavigationBarDefaultsKey = @"ShowTopNavigationBar";
 static NSString * const kTextFontSizeDefaultsKey = @"TextFontSize";
 static NSString * const kEnableFullscreenVideoPlaybackDefaultsKey = @"EnableFullscreenVideoPlayback";
 static NSString * const kScalePagesToFitDefaultsKey = @"ScalePagesToFit";
 static NSString * const kDontShowHintsOnLaunchDefaultsKey = @"DontShowHintsOnLaunch";
-static NSString * const kHomepageDefaultsKey = @"homepage";
 
 static NSUInteger const kDefaultTextFontSize = 100;
 static NSUInteger const kMinimumTextFontSize = 50;
@@ -56,16 +54,6 @@ static NSUInteger const kMaximumTextFontSize = 200;
     [[self defaults] synchronize];
 }
 
-- (BOOL)topNavigationBarVisible {
-    NSNumber *showTopNavBar = [[self defaults] objectForKey:kShowTopNavigationBarDefaultsKey];
-    return showTopNavBar ? showTopNavBar.boolValue : YES;
-}
-
-- (void)setTopNavigationBarVisible:(BOOL)topNavigationBarVisible {
-    [[self defaults] setObject:@(topNavigationBarVisible) forKey:kShowTopNavigationBarDefaultsKey];
-    [[self defaults] synchronize];
-}
-
 - (NSUInteger)textFontSize {
     NSNumber *textFontSizeValue = [[self defaults] objectForKey:kTextFontSizeDefaultsKey];
     if (textFontSizeValue == nil) {
@@ -105,16 +93,6 @@ static NSUInteger const kMaximumTextFontSize = 200;
 
 - (void)setDontShowHintsOnLaunch:(BOOL)dontShowHintsOnLaunch {
     [[self defaults] setBool:dontShowHintsOnLaunch forKey:kDontShowHintsOnLaunchDefaultsKey];
-    [[self defaults] synchronize];
-}
-
-- (NSString *)homePageURLString {
-    NSString *value = [[self defaults] stringForKey:kHomepageDefaultsKey];
-    return value ?: @"";
-}
-
-- (void)setHomePageURLString:(NSString *)homePageURLString {
-    [[self defaults] setObject:homePageURLString ?: @"" forKey:kHomepageDefaultsKey];
     [[self defaults] synchronize];
 }
 

@@ -27,14 +27,6 @@ static NSUInteger const kMaximumHistoryCount = 100;
     return self;
 }
 
-- (NSURLRequest *)homePageRequest {
-    NSString *homePageURLString = self.preferencesStore.homePageURLString;
-    if (homePageURLString.length == 0) {
-        homePageURLString = @"http://www.google.com";
-    }
-    return [self requestForURLString:homePageURLString];
-}
-
 - (NSURLRequest *)requestForEnteredAddressString:(NSString *)addressString {
     NSString *trimmedAddress = [self trimmedString:addressString];
     if (trimmedAddress.length == 0) {

@@ -81,21 +81,13 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
 @property (nonatomic) CGFloat panelWidth;
 @property (nonatomic) BOOL didAnimateIn;
 @property (nonatomic) BOOL dismissalInProgress;
-@property (nonatomic) BOOL usingNativeGlassEffect;
 
 @end
 
 @implementation BrowserAdvancedMenuViewController
 
 - (UIVisualEffect *)panelEffect {
-    Class glassEffectClass = NSClassFromString(@"UIGlassEffect");
-    if (glassEffectClass != Nil) {
-        id effect = [[glassEffectClass alloc] init];
-        if ([effect isKindOfClass:[UIVisualEffect class]]) {
-            return (UIVisualEffect *)effect;
-        }
-    }
-    return [UIBlurEffect effectWithStyle:UIBlurEffectStyleLight];
+    return [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
 }
 
 - (instancetype)initWithTitle:(NSString *)title
@@ -116,12 +108,10 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
     [super viewDidLoad];
     self.view.backgroundColor = UIColor.clearColor;
 
-    self.panelWidth = MIN(MAX(CGRectGetWidth(UIScreen.mainScreen.bounds) * 0.38, 480.0), 700.0);
-    self.usingNativeGlassEffect = (NSClassFromString(@"UIGlassEffect") != Nil);
-
+    self.panelWidth = MIN(MAX(CGRectGetWidth(self.view.bounds) * 0.38, 480.0), 700.0);
     UIView *dimView = [UIView new];
     dimView.translatesAutoresizingMaskIntoConstraints = NO;
-    dimView.backgroundColor = self.usingNativeGlassEffect ? UIColor.clearColor : [UIColor colorWithWhite:0.0 alpha:0.45];
+    dimView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.45];
     dimView.alpha = 0.0;
     [self.view addSubview:dimView];
     self.dimView = dimView;
@@ -131,18 +121,16 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
     panelView.backgroundColor = UIColor.clearColor;
     panelView.layer.cornerRadius = 28.0;
     panelView.layer.masksToBounds = YES;
-    panelView.layer.borderWidth = self.usingNativeGlassEffect ? 0.0 : 1.0;
+    panelView.layer.borderWidth = 1.0;
     panelView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.28].CGColor;
     [self.view addSubview:panelView];
     self.panelView = panelView;
 
-    UIView *panelTint = nil;
-    if (!self.usingNativeGlassEffect) {
-        panelTint = [UIView new];
-        panelTint.translatesAutoresizingMaskIntoConstraints = NO;
-        panelTint.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.08];
-        [panelView.contentView addSubview:panelTint];
-    }
+    UIView *panelTint = [UIView new];
+    panelTint.translatesAutoresizingMaskIntoConstraints = NO;
+    panelTint.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.06];
+    panelTint.userInteractionEnabled = NO;
+    [panelView.contentView addSubview:panelTint];
 
     UILabel *titleLabel = [UILabel new];
     titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -234,12 +222,10 @@ typedef void (^BrowserAdvancedMenuItemHandler)(void);
         [footerLabel.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor constant:-24.0],
         [footerLabel.bottomAnchor constraintEqualToAnchor:panelView.bottomAnchor constant:-12.0],
     ]];
-    if (panelTint != nil) {
-        [constraints addObject:[panelTint.leadingAnchor constraintEqualToAnchor:panelView.contentView.leadingAnchor]];
-        [constraints addObject:[panelTint.trailingAnchor constraintEqualToAnchor:panelView.contentView.trailingAnchor]];
-        [constraints addObject:[panelTint.topAnchor constraintEqualToAnchor:panelView.contentView.topAnchor]];
-        [constraints addObject:[panelTint.bottomAnchor constraintEqualToAnchor:panelView.contentView.bottomAnchor]];
-    }
+    [constraints addObject:[panelTint.leadingAnchor constraintEqualToAnchor:panelView.contentView.leadingAnchor]];
+    [constraints addObject:[panelTint.trailingAnchor constraintEqualToAnchor:panelView.contentView.trailingAnchor]];
+    [constraints addObject:[panelTint.topAnchor constraintEqualToAnchor:panelView.contentView.topAnchor]];
+    [constraints addObject:[panelTint.bottomAnchor constraintEqualToAnchor:panelView.contentView.bottomAnchor]];
     [NSLayoutConstraint activateConstraints:constraints];
 }
 
@@ -513,6 +499,8 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
 - (void)saveFavoritesArray:(NSArray *)favorites {
     [[NSUserDefaults standardUserDefaults] setObject:favorites forKey:@"FAVORITES"];
     [[NSUserDefaults standardUserDefaults] synchronize];
+    [NSNotificationCenter.defaultCenter postNotificationName:@"BrowserFavoritesDidChangeNotification"
+                                                      object:nil];
 }
 
 - (void)presentDeleteFavoriteMenu {
@@ -866,45 +854,11 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
     [self.host browserPresentViewController:alertController];
 }
 
-- (BrowserAdvancedMenuItem *)topNavigationVisibilityMenuItem {
-    NSString *title = self.host.browserTopMenuShowing ? @"Hide Top Navigation bar" : @"Show Top Navigation bar";
-    return [self advancedMenuItemWithTitle:title
-                                     style:UIAlertActionStyleDefault
-                                   handler:^{
-        if (self.host.browserTopMenuShowing) {
-            UIAlertController *alertController = [self browserAlertControllerWithTitle:@"Hide Top Navigation bar?"
-                                                                               message:@"You can still open the side menu by double-tapping the Play/Pause button."];
-            [alertController addAction:[self browserActionWithTitle:@"Cancel"
-                                                              style:UIAlertActionStyleCancel
-                                                            handler:nil]];
-            [alertController addAction:[self browserActionWithTitle:@"Hide Bar"
-                                                              style:UIAlertActionStyleDestructive
-                                                            handler:^(__unused UIAlertAction *action) {
-                [self.host browserHideTopNav];
-            }]];
-            [self.host browserPresentViewController:alertController];
-        } else {
-            [self.host browserShowTopNav];
-        }
-    }];
-}
-
 - (BrowserAdvancedMenuItem *)homePageMenuItem {
     return [self advancedMenuItemWithTitle:@"Go To Home Page"
                                      style:UIAlertActionStyleDefault
                                    handler:^{
         [self.host browserLoadHomePage];
-    }];
-}
-
-- (BrowserAdvancedMenuItem *)setCurrentPageAsHomePageMenuItem {
-    return [self advancedMenuItemWithTitle:@"Set Current Page As Home Page"
-                                     style:UIAlertActionStyleDefault
-                                   handler:^{
-        NSURLRequest *request = [[self.host browserWebView] request];
-        if (request != nil && [self stringHasVisibleContent:request.URL.absoluteString]) {
-            self.preferencesStore.homePageURLString = request.URL.absoluteString;
-        }
     }];
 }
 
@@ -932,14 +886,6 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
             [(UIAlertController *)viewController addAction:[self browserCancelAction]];
         }
         [self.host browserPresentViewController:viewController];
-    }];
-}
-
-- (BrowserAdvancedMenuItem *)showTabsMenuItem {
-    return [self advancedMenuItemWithTitle:@"Show Tabs"
-                                     style:UIAlertActionStyleDefault
-                                   handler:^{
-        [self.host browserShowTabOverview];
     }];
 }
 
@@ -1054,15 +1000,12 @@ withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
         [BrowserAdvancedMenuSection sectionWithTitle:@"Navigation"
                                                items:@[
             [self homePageMenuItem],
-            [self setCurrentPageAsHomePageMenuItem],
             [self favoritesMenuItem],
             [self historyMenuItem],
-            [self showTabsMenuItem],
             [self newTabMenuItem],
         ]],
         [BrowserAdvancedMenuSection sectionWithTitle:@"Appearance"
                                                items:@[
-            [self topNavigationVisibilityMenuItem],
             [self pageScalingMenuItem],
             increaseFontSizeItem,
             decreaseFontSizeItem,

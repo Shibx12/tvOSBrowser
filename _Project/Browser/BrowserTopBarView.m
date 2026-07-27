@@ -1,9 +1,5 @@
 #import "BrowserTopBarView.h"
 
-#if __has_include(<UIKit/UIGlassEffect.h>)
-#import <UIKit/UIGlassEffect.h>
-#endif
-
 static CGFloat const kTopBarHorizontalInset = 40.0;
 static CGFloat const kTopBarVerticalInset = 8.0;
 static CGFloat const kTopBarHeight = 86.0;
@@ -211,23 +207,6 @@ static CGFloat const kTopBarUniformFocusHeight = 72.0;
 }
 
 - (void)applyVisualStyle {
-#if __has_include(<UIKit/UIGlassEffect.h>)
-    if (@available(tvOS 26.0, *)) {
-        self.effect = nil;
-
-        UIGlassEffect *glassEffect = [UIGlassEffect effectWithStyle:UIGlassEffectStyleRegular];
-        glassEffect.interactive = YES;
-        glassEffect.tintColor = [UIColor colorWithWhite:1.0 alpha:0.10];
-        self.chromeEffectView.effect = glassEffect;
-        self.chromeEffectView.alpha = 1.0;
-        self.chromeContainerView.layer.shadowOpacity = 0.0;
-        self.chromeContainerView.layer.shadowOffset = CGSizeZero;
-        self.chromeContainerView.layer.shadowRadius = 0.0;
-        self.chromeContainerView.layer.borderWidth = 0.0;
-        return;
-    }
-#endif
-
     self.effect = nil;
     self.chromeEffectView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
     self.chromeEffectView.alpha = 0.98;
