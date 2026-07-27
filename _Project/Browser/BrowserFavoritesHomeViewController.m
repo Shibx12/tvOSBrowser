@@ -112,6 +112,9 @@ static CGFloat BrowserFavoritesSquaredDistance(CGPoint firstPoint, CGPoint secon
 @property (nonatomic) UILabel *titleLabel;
 @property (nonatomic) UICollectionView *collectionView;
 @property (nonatomic) UICollectionViewFlowLayout *collectionLayout;
+@property (nonatomic) CAGradientLayer *backgroundGradientLayer;
+@property (nonatomic) UIVisualEffectView *backgroundEffectView;
+@property (nonatomic) UIView *backgroundTintView;
 @property (nonatomic, copy) NSArray<NSArray<NSString *> *> *favorites;
 @property (nonatomic, nullable) NSIndexPath *hoveredIndexPath;
 
@@ -121,7 +124,46 @@ static CGFloat BrowserFavoritesSquaredDistance(CGPoint firstPoint, CGPoint secon
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor = [UIColor colorWithWhite:0.035 alpha:1.0];
+    self.view.backgroundColor = [UIColor colorWithRed:0.06 green:0.17 blue:0.25 alpha:1.0];
+
+    self.backgroundGradientLayer = [CAGradientLayer layer];
+    self.backgroundGradientLayer.colors = @[
+        (id)[UIColor colorWithRed:0.05 green:0.16 blue:0.27 alpha:1.0].CGColor,
+        (id)[UIColor colorWithRed:0.085 green:0.34 blue:0.43 alpha:1.0].CGColor,
+        (id)[UIColor colorWithRed:0.05 green:0.17 blue:0.25 alpha:1.0].CGColor,
+    ];
+    self.backgroundGradientLayer.locations = @[@0.0, @0.58, @1.0];
+    self.backgroundGradientLayer.startPoint = CGPointMake(0.0, 0.0);
+    self.backgroundGradientLayer.endPoint = CGPointMake(1.0, 1.0);
+    [self.view.layer insertSublayer:self.backgroundGradientLayer atIndex:0];
+
+    self.backgroundEffectView =
+        [[UIVisualEffectView alloc] initWithEffect:[BrowserAppearance chromeBlurEffect]];
+    self.backgroundEffectView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.backgroundEffectView.userInteractionEnabled = NO;
+    [self.view addSubview:self.backgroundEffectView];
+
+    self.backgroundTintView = [UIView new];
+    self.backgroundTintView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.backgroundTintView.backgroundColor =
+        [UIColor colorWithWhite:0.02 alpha:0.16];
+    [self.backgroundEffectView.contentView addSubview:self.backgroundTintView];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [self.backgroundEffectView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+        [self.backgroundEffectView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        [self.backgroundEffectView.topAnchor constraintEqualToAnchor:self.view.topAnchor],
+        [self.backgroundEffectView.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
+
+        [self.backgroundTintView.leadingAnchor
+            constraintEqualToAnchor:self.backgroundEffectView.contentView.leadingAnchor],
+        [self.backgroundTintView.trailingAnchor
+            constraintEqualToAnchor:self.backgroundEffectView.contentView.trailingAnchor],
+        [self.backgroundTintView.topAnchor
+            constraintEqualToAnchor:self.backgroundEffectView.contentView.topAnchor],
+        [self.backgroundTintView.bottomAnchor
+            constraintEqualToAnchor:self.backgroundEffectView.contentView.bottomAnchor],
+    ]];
 
     self.titleLabel = [UILabel new];
     self.titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -180,6 +222,11 @@ static CGFloat BrowserFavoritesSquaredDistance(CGPoint firstPoint, CGPoint secon
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    self.backgroundGradientLayer.frame = self.view.bounds;
+    [CATransaction commit];
+
     CGFloat availableWidth = MAX(CGRectGetWidth(self.collectionView.bounds) - 40.0, 1.0);
     CGFloat itemWidth = floor((availableWidth - (4.0 * self.collectionLayout.minimumInteritemSpacing)) / 5.0);
     CGSize itemSize = CGSizeMake(itemWidth, MAX(176.0, floor(itemWidth * 0.58)));
